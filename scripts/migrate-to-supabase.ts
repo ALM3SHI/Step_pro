@@ -12,8 +12,10 @@
  *   npx tsx scripts/migrate-to-supabase.ts           # published + review
  *   npx tsx scripts/migrate-to-supabase.ts --drafts  # include unkeyed drafts
  *
- * Idempotent: everything upserts on a stable external_id, so re-running
- * updates in place and never duplicates.
+ * Idempotent: everything merges on `content_hash` (or `audio_key`), so
+ * re-running updates in place and never duplicates. Merging on the hash
+ * also ADOPTS rows that already exist from earlier admin ingestion —
+ * tagging them with a skill instead of colliding with them.
  */
 import { readFileSync } from 'node:fs';
 import { createClient } from '@supabase/supabase-js';
@@ -76,13 +78,36 @@ if (missingSkill > 0) {
 
 if (dryRun) { console.log('\n--dry: nothing written.'); process.exit(0); }
 
-/** Chunked upsert — a single 1,400-row request exceeds the payload cap. */
+/**
+ * Chunked upsert — a single 1,400-row request exceeds the payload cap.
+ *
+ * The conflict target is `content_hash` (or `audio_key`), NOT
+ * `external_id`. Two reasons:
+ *
+ *  1. Those indexes already exist, are unique, and are NOT partial, so
+ *     ON CONFLICT can match them. The external_id indexes added in 0006
+ *     were partial and Postgres refuses to use them as a conflict target.
+ *  2. More importantly, `content_hash` already has a UNIQUE constraint.
+ *     Inserting a bundle question whose content matches a row created
+ *     earlier through the admin UI would violate it. Merging on the hash
+ *     instead UPDATES that row in place — claiming it, tagging it with a
+ *     skill, and setting its external_id — rather than failing or
+ *     creating a second copy of the same question.
+ */
 async function upsert(table: string, rows: unknown[], onConflict: string, size = 200) {
   let done = 0;
   for (let i = 0; i < rows.length; i += size) {
     const chunk = rows.slice(i, i + size);
     const { error } = await db.from(table).upsert(chunk as never, { onConflict });
-    if (error) throw new Error(`${table}: ${error.message}`);
+    if (error) {
+      if (/no unique or exclusion constraint/i.test(error.message)) {
+        throw new Error(
+          `${table}: ON CONFLICT (${onConflict}) has no usable unique index.\n` +
+          `  Run supabase/migrations/0007_fix_upsert_constraints.sql, then retry.`,
+        );
+      }
+      throw new Error(`${table}: ${error.message}`);
+    }
     done += chunk.length;
     process.stdout.write(`\r  ${table}: ${done}/${rows.length}`);
   }
@@ -135,7 +160,7 @@ async function upsert(table: string, rows: unknown[], onConflict: string, size =
         image_url: p.imageUrl ?? null,
         image_alt: p.imageAlt ?? null,
       }));
-    await upsert('passages', passageRows, 'external_id');
+    await upsert('passages', passageRows, 'content_hash');
 
     // --- audio clips ---
     const usedClips = new Set(wanted.map((q) => q.audioClipId).filter(Boolean));
@@ -149,7 +174,7 @@ async function upsert(table: string, rows: unknown[], onConflict: string, size =
         transcript: c.transcript ?? null,
         duration_ms: c.durationMs ?? null,
       }));
-    if (clipRows.length) await upsert('audio_clips', clipRows, 'external_id');
+    if (clipRows.length) await upsert('audio_clips', clipRows, 'audio_key');
 
     // Re-read to resolve foreign keys.
     const { data: pRows } = await db.from('passages').select('id, external_id');
@@ -185,7 +210,7 @@ async function upsert(table: string, rows: unknown[], onConflict: string, size =
       needs_human_review: q.status === 'review',
     }));
 
-    await upsert('questions', questionRows, 'external_id');
+    await upsert('questions', questionRows, 'content_hash');
 
     const { count } = await db.from('questions').select('*', { count: 'exact', head: true });
     console.log(`\nDone. questions table holds ${count} row(s).`);
