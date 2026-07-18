@@ -1,0 +1,404 @@
+@import 'tailwindcss';
+
+/* =====================================================================
+   Design tokens
+   =====================================================================
+   Two SEPARATE systems, deliberately not merged:
+
+   1. `--x*` — the STEP exam simulator. Extracted verbatim from the legacy
+      step-prep.html. These are FIXED LIGHT VALUES and must never respond
+      to the theme toggle: the real testing hall renders one way, and a
+      dark-mode exam would break the simulation. Do not "improve" these.
+
+   2. `--app*` — the surrounding platform and admin dashboard, which does
+      theme and uses the glassmorphism treatment.
+   ===================================================================== */
+
+@theme {
+  /* --- STEP exam simulator (locked light) --- */
+  --color-x-brand: #01589b;        /* header, footer, section rules */
+  --color-x-brand-sub: #4c9bd1;    /* sub-bar under the header */
+  --color-x-warn: #7a1f14;         /* header turns red under 2 min */
+  --color-x-ink: #1c2733;
+  --color-x-ink-strong: #101820;
+  --color-x-muted: #5a6b7a;
+  --color-x-line: #c8d2db;
+  --color-x-line-soft: #e0e7ec;
+  --color-x-hover: #f0f5fa;
+  --color-x-panel: #f2f5f7;
+  --color-x-sel: #0ea5e9;          /* selected radio */
+  --color-x-go: #1cb098;           /* primary footer action */
+  --color-x-go-hover: #159079;
+  --color-x-flag: #d98e32;         /* flag-for-review amber */
+  --color-x-flag-ink: #221503;
+  --color-x-good: #2e7d4f;
+  --color-x-good-soft: #e3f1e8;
+  --color-x-bad: #c0392b;
+  --color-x-bad-soft: #f9e5e2;
+  --color-x-flag-soft: #f9ebd8;
+  --color-x-flag-line: #c67f1e;
+
+  /* --- Platform / admin --- */
+  --color-app-bg: #f7f3ec;
+  --color-app-surface: #ffffff;
+  --color-app-surface-2: #f0eae0;
+  --color-app-ink: #1e2b29;
+  --color-app-muted: #5c6b68;
+  --color-app-brand: #0e5a54;
+  --color-app-accent: #d98e32;
+  --color-app-line: #e3ddd2;
+
+  --font-arabic: 'Noto Naskh Arabic', 'Segoe UI', Tahoma, Arial, sans-serif;
+  --font-exam: Georgia, 'Times New Roman', serif;
+}
+
+:root {
+  --app-bg: #f7f3ec;
+  --app-surface: #ffffff;
+  --app-surface-2: #f0eae0;
+  --app-ink: #1e2b29;
+  --app-muted: #5c6b68;
+  --app-brand: #0e5a54;
+  --app-line: #e3ddd2;
+  --app-glass: rgba(255, 255, 255, 0.62);
+  --app-glass-line: rgba(255, 255, 255, 0.7);
+  --app-shadow: 0 8px 32px rgba(30, 43, 41, 0.1);
+}
+
+/* Dark palette, declared once and applied from two triggers.
+   These must be SEPARATE rules: a selector list cannot contain an
+   @media, and writing it that way makes the whole block invalid --
+   which CSS fails silently rather than reporting. */
+/* 1. System preference, unless the user has explicitly chosen light. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --app-bg: #0f1b19;
+    --app-surface: #16221f;
+    --app-surface-2: #1c2a27;
+    --app-ink: #e8efed;
+    --app-muted: #93a5a1;
+    --app-brand: #3fa79a;
+    --app-line: #263632;
+    --app-glass: rgba(22, 34, 31, 0.55);
+    --app-glass-line: rgba(255, 255, 255, 0.08);
+    --app-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  }
+}
+
+/* 2. Explicit toggle, which must win over the system preference. */
+:root[data-theme='dark'] {
+  --app-bg: #0f1b19;
+  --app-surface: #16221f;
+  --app-surface-2: #1c2a27;
+  --app-ink: #e8efed;
+  --app-muted: #93a5a1;
+  --app-brand: #3fa79a;
+  --app-line: #263632;
+  --app-glass: rgba(22, 34, 31, 0.55);
+  --app-glass-line: rgba(255, 255, 255, 0.08);
+  --app-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--app-bg);
+  color: var(--app-ink);
+  font-family: var(--font-arabic);
+  line-height: 1.65;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+
+/* ---------------------------------------------------------------------
+   Glassmorphism — admin only.
+   A backdrop-filter on a large surface is genuinely expensive to
+   composite, so it is a utility applied to cards, never to the page.
+   --------------------------------------------------------------------- */
+@utility glass {
+  background: var(--app-glass);
+  border: 1px solid var(--app-glass-line);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  box-shadow: var(--app-shadow);
+}
+
+/* ---------------------------------------------------------------------
+   Exam shell primitives.
+   Kept as CSS classes rather than Tailwind utility soup: these encode the
+   simulator's exact geometry, and a stray utility edit in a component
+   would silently break the pixel match.
+   --------------------------------------------------------------------- */
+.x-shell {
+  background: #fff;
+  color: var(--color-x-ink);
+  border: 1px solid var(--color-x-line);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 2px 10px rgba(30, 43, 41, 0.08);
+}
+
+.x-shell--fs {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  border: none;
+  border-radius: 0;
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: none;
+}
+
+/* Header / sub-bar / footer stay fixed; only the right pane scrolls. */
+.x-shell--fs .x-header,
+.x-shell--fs .x-subbar,
+.x-shell--fs .x-footer { flex: 0 0 auto; }
+.x-shell--fs .x-main { flex: 1 1 auto; min-height: 0; }
+.x-shell--fs .x-stimulus,
+.x-shell--fs .x-question { overflow-y: auto; max-height: 100%; }
+
+.x-header {
+  direction: ltr;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--color-x-brand);
+  color: #fff;
+  padding: 10px 18px;
+  flex-wrap: wrap;
+}
+.x-header[data-warn='true'] { background: var(--color-x-warn); }
+
+.x-subbar {
+  direction: ltr;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--color-x-brand-sub);
+  color: #fff;
+  padding: 6px 16px;
+  font-size: 0.85rem;
+}
+
+.x-main {
+  direction: ltr;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  min-height: 380px;
+  background: #fff;
+}
+.x-main[data-single='true'] { grid-template-columns: 1fr; }
+
+.x-stimulus { border-right: 3px solid var(--color-x-brand); padding: 24px; overflow: auto; }
+.x-question { padding: 24px; direction: rtl; }
+
+@media (max-width: 760px) {
+  .x-main { grid-template-columns: 1fr; }
+  .x-stimulus { border-right: none; border-bottom: 3px solid var(--color-x-brand); }
+}
+
+.x-footer { direction: ltr; display: flex; background: var(--color-x-brand); padding: 0; }
+
+.x-btn {
+  background: transparent;
+  color: #fff;
+  border: none;
+  padding: 15px 20px;
+  font-weight: 700;
+  font-size: 0.95rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+.x-btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.12); }
+.x-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.x-btn--go { background: var(--color-x-go); }
+.x-btn--go:hover:not(:disabled) { background: var(--color-x-go-hover); }
+.x-btn--dim { opacity: 0.6; font-size: 0.8rem; }
+
+/* Question text and options are LTR English inside an RTL shell. */
+.x-qtext {
+  direction: ltr;
+  text-align: left;
+  font-size: calc(var(--xfs, 16px) + 2px);
+  font-weight: 600;
+  color: var(--color-x-ink-strong);
+  margin: 0 0 18px;
+  line-height: 1.65;
+}
+
+.x-opt {
+  direction: ltr;
+  text-align: left;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  background: none;
+  border: none;
+  padding: 8px;
+  font-size: var(--xfs, 16px);
+  color: var(--color-x-ink-strong);
+  cursor: pointer;
+  border-radius: 6px;
+  width: 100%;
+  font-family: inherit;
+}
+.x-opt:hover { background: #f4f7f9; }
+.x-opt[data-selected='true'] { color: var(--color-x-sel); font-weight: 600; }
+
+.x-radio {
+  width: 20px;
+  height: 20px;
+  border: 1px solid #999;
+  border-radius: 50%;
+  position: relative;
+  flex-shrink: 0;
+  margin-top: 2px;
+  background: #fff;
+}
+.x-opt[data-selected='true'] .x-radio { border: 2px solid var(--color-x-sel); }
+.x-opt[data-selected='true'] .x-radio::after {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  background: var(--color-x-sel);
+  border-radius: 50%;
+}
+
+.x-passage {
+  font-family: var(--font-exam);
+  text-align: left;
+  line-height: 1.85;
+  font-size: var(--xfs, 16px);
+  color: var(--color-x-ink);
+  /* Passages are stored as plain text with \n\n between paragraphs (the
+     segmenter joins them that way). The legacy file stored pre-rendered
+     HTML, so it never needed this — without it every reading passage
+     collapses into a single unbroken block. */
+  white-space: pre-line;
+}
+
+/* Review screen */
+.x-qcell {
+  padding: 10px 0;
+  text-align: center;
+  border-radius: 8px;
+  border: 2px solid var(--color-x-line);
+  font-weight: 700;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+  background: var(--color-x-panel);
+  color: var(--color-x-ink);
+  font-size: 0.95rem;
+}
+.x-qcell[data-answered='true'] { background: var(--color-x-good-soft); border-color: var(--color-x-good); }
+.x-qcell[data-flagged='true'] { background: var(--color-x-flag-soft); border-color: var(--color-x-flag-line); }
+.x-qcell[data-current='true'] { outline: 3px solid var(--color-x-sel); outline-offset: 1px; }
+
+/* ---------------------------------------------------------------------
+   Review grid — ported 1:1 from the legacy .xrev* / .xtable / .xqrow.
+   --------------------------------------------------------------------- */
+.x-rev { padding: 0 0 20px; }
+
+.x-rev-title {
+  text-align: center;
+  font-weight: 800;
+  color: var(--color-x-ink);
+  background: #f5f7f9;
+  padding: 14px;
+  border-bottom: 1px solid var(--color-x-line-soft);
+  font-size: 1.15rem;
+}
+
+.x-instr {
+  margin: 18px;
+  border: 1px solid var(--color-x-line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.x-instr-head {
+  background: var(--color-x-brand);
+  color: #fff;
+  font-weight: 700;
+  padding: 8px 14px;
+}
+.x-instr-body {
+  padding: 12px 16px;
+  color: #333f4b;
+  line-height: 1.7;
+  font-size: 0.92rem;
+}
+
+.x-revbar {
+  display: flex;
+  justify-content: space-between;
+  background: var(--color-x-brand);
+  color: #fff;
+  font-weight: 700;
+  padding: 8px 16px;
+  margin: 0 18px;
+}
+
+.x-table {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(215px, 1fr));
+  margin: 0 18px;
+  border: 1px solid var(--color-x-line-soft);
+  border-top: none;
+}
+
+.x-qrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #fff;
+  border: none;
+  border-bottom: 1px solid #edf1f4;
+  border-right: 1px solid #edf1f4;
+  padding: 12px 14px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: var(--color-x-ink);
+  text-align: left;
+  direction: ltr;
+  font-family: inherit;
+}
+.x-qrow:hover { background: var(--color-x-hover); }
+
+.x-fon { color: var(--color-x-flag-line); }
+.x-foff { color: #b9c6d0; }
+.x-st-c { color: var(--color-x-good); font-weight: 600; }
+.x-st-i { color: var(--color-x-bad); font-weight: 600; }
+
+/* Part intro screen */
+.x-intro { direction: ltr; text-align: left; padding: 38px 34px; min-height: 320px; }
+.x-intro h1 { color: var(--color-x-brand); margin: 0 0 18px; font-size: 2rem; }
+.x-intro h3 { margin: 0 0 14px; color: var(--color-x-ink); font-size: 1.15rem; }
+.x-intro p { margin: 6px 0; color: #333f4b; font-size: 1.02rem; }
+
+/* Analytical chart/graph stimulus */
+.x-figure { margin: 0 0 16px; }
+.x-figure img {
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--color-x-line-soft);
+  border-radius: 6px;
+  background: #fff;
+}
+.x-figure figcaption {
+  margin-top: 6px;
+  font-size: 0.82rem;
+  color: var(--color-x-muted);
+  direction: ltr;
+  text-align: left;
+}
+
+/* STEP is taken in landscape; portrait phones get a rotate prompt. */
+@media (max-width: 1000px) and (orientation: portrait) {
+  .x-rotate-nag { display: flex !important; }
+  .x-shell--fs .x-main { visibility: hidden; }
+}
