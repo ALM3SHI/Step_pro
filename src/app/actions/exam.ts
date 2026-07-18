@@ -1,18 +1,15 @@
 'use server';
 
-import { BundleContentProvider } from '@/lib/content/bundleProvider';
+import { getContentProvider } from '@/lib/content/activeProvider';
 import { FULL_STEP_BLUEPRINT, practiceBlueprint } from '@/lib/content/blueprint';
 import { buildExam, poolSummary, type BuiltExam } from '@/lib/exam/buildExam';
 import type { SectionId } from '@/lib/content/taxonomy';
 
 /**
- * Content source for the runtime exam.
- *
- * The bundle provider is used today so the simulator works with no
- * database dependency. Swapping in a Supabase provider is a one-line
- * change here — nothing above this function knows the difference.
+ * Content source is resolved centrally: Supabase when configured, the
+ * built bundle otherwise. Nothing in this file knows which is live.
  */
-const provider = new BundleContentProvider();
+const provider = () => getContentProvider();
 
 export interface StartExamResult {
   ok: boolean;
@@ -24,7 +21,7 @@ export interface StartExamResult {
 
 export async function startFullExam(seed?: number): Promise<StartExamResult> {
   try {
-    const snapshot = await provider.load();
+    const snapshot = await provider().load();
     const exam = buildExam(FULL_STEP_BLUEPRINT, snapshot, {
       // A time-derived seed gives a different paper each sitting while
       // staying reproducible from the value stored on the attempt.
@@ -46,7 +43,7 @@ export async function startPractice(
   seed?: number,
 ): Promise<StartExamResult> {
   try {
-    const snapshot = await provider.load();
+    const snapshot = await provider().load();
     const exam = buildExam(practiceBlueprint(section, questionCount), snapshot, {
       seed: seed ?? Math.floor(Date.now() / 1000),
     });
@@ -62,6 +59,6 @@ export async function startPractice(
 
 /** Availability per section, for the start screen. */
 export async function getPoolSummary(): Promise<Record<string, number>> {
-  const snapshot = await provider.load();
+  const snapshot = await provider().load();
   return poolSummary(snapshot);
 }

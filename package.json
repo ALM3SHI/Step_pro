@@ -15,8 +15,10 @@
     "listening:verify": "tsx scripts/verify-listening-seed.ts",
     "solver:test": "tsx scripts/test-solver.ts",
     "eval:gold": "tsx scripts/eval-gold-set.ts",
-    "seed:supabase": "tsx scripts/seed-supabase.ts",
-    "seed:dry": "tsx scripts/seed-supabase.ts --dry",
+    "migrate:dry": "tsx scripts/migrate-to-supabase.ts --dry",
+    "migrate:run": "tsx scripts/migrate-to-supabase.ts",
+    "migrate:verify": "tsx scripts/verify-migration.ts",
+    
     "content:build": "tsx scripts/extract-legacy-bank.ts && tsx scripts/build-content.ts",
     "content:check": "tsx scripts/check-blueprint-feasibility.ts",
     "test": "tsx scripts/test-content-layer.ts && tsx scripts/test-build-exam.ts && tsx scripts/test-session.ts && tsx scripts/test-fastkey.ts && tsx scripts/test-sha256.ts && tsx scripts/test-small-batch.ts && tsx scripts/test-solver.ts"
