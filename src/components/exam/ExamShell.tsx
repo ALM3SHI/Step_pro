@@ -21,6 +21,15 @@ export interface ExamShellProps {
   questionLabel: string;
   stimulus?: ReactNode;
   footer: ReactNode;
+  /**
+   * Take over the viewport unconditionally.
+   *
+   * The exam route uses this so no site chrome is reachable — the
+   * browser's Fullscreen API is a separate, optional escalation that
+   * also hides the URL bar, but it can be refused (iOS Safari) and must
+   * never be the only thing hiding the site.
+   */
+  fullScreen?: boolean;
   /** Replaces `footer` outright — used by the review grid. */
   footerOverride?: ReactNode;
   showFlag?: boolean;
@@ -39,13 +48,14 @@ export function ExamShell({
   stimulus,
   footer,
   footerOverride,
+  fullScreen = false,
   showFlag = false,
   flagged = false,
   onToggleFlag,
   children,
 }: ExamShellProps) {
   const [fontSize, setFontSize] = useState(16);
-  const [fullscreen, setFullscreen] = useState(false);
+  const [fullscreen, setFullscreen] = useState(fullScreen);
   const shellRef = useRef<HTMLDivElement>(null);
 
   const warn = useTimeWarning(deadlineAt);
@@ -59,27 +69,31 @@ export function ExamShell({
   }, [fullscreen]);
 
   // Track the browser's own fullscreen state so the button label stays
-  // truthful when the user leaves via Esc rather than our control.
+  // truthful when the user leaves via Esc. When `fullScreen` is set the
+  // shell stays viewport-filling regardless — leaving native fullscreen
+  // must not put the website back on screen mid-exam.
   useEffect(() => {
-    const onChange = () => { if (!document.fullscreenElement) setFullscreen(false); };
+    const onChange = () => {
+      if (!document.fullscreenElement && !fullScreen) setFullscreen(false);
+    };
     document.addEventListener('fullscreenchange', onChange);
     return () => document.removeEventListener('fullscreenchange', onChange);
-  }, []);
+  }, [fullScreen]);
 
   const toggleFullscreen = async () => {
     try {
       if (document.fullscreenElement) {
         await document.exitFullscreen();
-        setFullscreen(false);
+        if (!fullScreen) setFullscreen(false);
       } else {
         await shellRef.current?.requestFullscreen();
         setFullscreen(true);
       }
     } catch {
-      // Fullscreen can be refused (iOS Safari, permissions policy).
-      // Fall back to the CSS-only fixed overlay so the exam still fills
-      // the viewport rather than silently doing nothing.
-      setFullscreen((v) => !v);
+      // Fullscreen can be refused (iOS Safari, permissions policy). The
+      // CSS overlay already covers the viewport, so there is nothing to
+      // fall back to — just leave the exam as it is.
+      if (!fullScreen) setFullscreen((v) => !v);
     }
   };
 

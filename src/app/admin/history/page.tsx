@@ -1,10 +1,29 @@
-import { createServiceClient } from '@/lib/supabase/server';
+import { createServiceClient, isSupabaseConfigured } from '@/lib/supabase/server';
 import { HistoryGrid } from './HistoryGrid';
 import type { BatchSummary } from '@/components/admin/BatchCard';
 
 export const dynamic = 'force-dynamic';
 
 export default async function HistoryPage() {
+  // Degrade to an explanation rather than a 500 when the keys are absent
+  // (a fresh clone, or a preview deploy without env vars).
+  if (!isSupabaseConfigured()) {
+    return (
+      <div className="glass rounded-2xl p-6">
+        <h1 className="mb-2 text-xl font-bold">سجل التسليمات</h1>
+        <p className="text-sm text-[color:var(--app-muted)]">
+          لم تُضبط متغيّرات Supabase بعد. أضف{' '}
+          <code dir="ltr">NEXT_PUBLIC_SUPABASE_URL</code> و{' '}
+          <code dir="ltr">SUPABASE_SERVICE_ROLE_KEY</code> في{' '}
+          <code dir="ltr">.env.local</code> أو في إعدادات Vercel.
+        </p>
+        <p className="mt-2 text-xs text-[color:var(--app-muted)]">
+          محاكي الاختبار يعمل بدونها — فهو يقرأ من حزمة المحتوى مباشرة.
+        </p>
+      </div>
+    );
+  }
+
   const db = createServiceClient();
   const { data, error } = await db
     .from('ingestion_batch_overview')

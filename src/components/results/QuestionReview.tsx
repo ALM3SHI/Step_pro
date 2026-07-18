@@ -2,7 +2,7 @@
 
 import { memo, useMemo, useState } from 'react';
 import { SECTION_LABEL_AR } from './palette';
-import type { ReviewRow } from '@/lib/exam/engine';
+import type { ReviewRow } from '@/lib/exam/scoring';
 
 type Filter = 'all' | 'wrong' | 'skipped' | 'flagged';
 

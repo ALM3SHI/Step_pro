@@ -2,7 +2,7 @@
 
 import { memo } from 'react';
 import { SECTION_LABEL_AR, STATUS } from './palette';
-import type { analyzeTime } from '@/lib/exam/engine';
+import type { analyzeTime } from '@/lib/exam/scoring';
 
 const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
 

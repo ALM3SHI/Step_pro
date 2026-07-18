@@ -2,46 +2,48 @@
 
 import { memo } from 'react';
 import { ExamAudioPlayer } from './ExamAudioPlayer';
-import type { ExamQuestion } from '@/lib/exam/types';
 
 /**
  * Left pane content: chart, passage, audio, or plain instructions.
  *
- * An analytical item can carry BOTH an image and a passage (a chart plus
- * its commentary), so the image renders above the text rather than
- * replacing it.
+ * Takes resolved values rather than a question object — the stimulus
+ * belongs to the SCREEN, not to any one question on it, and passing the
+ * first question was a quiet way to lose that distinction.
  */
 export const ExamStimulus = memo(function ExamStimulus({
-  question,
+  passageText,
+  audioUrl,
+  imageUrl,
+  imageAlt,
   instructions,
 }: {
-  question: ExamQuestion | undefined;
+  passageText?: string;
+  audioUrl?: string;
+  imageUrl?: string;
+  imageAlt?: string;
   instructions: string;
 }) {
-  if (!question) return <div className="x-instr-pane">{instructions}</div>;
+  const hasImage = Boolean(imageUrl);
 
-  const hasImage = Boolean(question.imageUrl);
-  const hasPassage = Boolean(question.passageText?.trim());
-
-  if (question.audioUrl) {
+  if (audioUrl) {
     return (
       <div>
-        {hasImage && <Figure url={question.imageUrl!} alt={question.imageAlt} />}
-        <ExamAudioPlayer src={question.audioUrl} />
+        {hasImage && <Figure url={imageUrl!} alt={imageAlt} />}
+        <ExamAudioPlayer src={audioUrl} />
       </div>
     );
   }
 
-  if (hasImage || hasPassage) {
+  if (hasImage || passageText?.trim()) {
     return (
       <div>
-        {hasImage && <Figure url={question.imageUrl!} alt={question.imageAlt} />}
-        {hasPassage && <div className="x-passage">{question.passageText}</div>}
+        {hasImage && <Figure url={imageUrl!} alt={imageAlt} />}
+        {passageText?.trim() && <div className="x-passage">{passageText}</div>}
       </div>
     );
   }
 
-  return <div className="x-instr-pane" dir="ltr">{instructions}</div>;
+  return <div className="x-instr-pane" dir="rtl">{instructions}</div>;
 });
 
 function Figure({ url, alt }: { url: string; alt?: string }) {
@@ -55,10 +57,3 @@ function Figure({ url, alt }: { url: string; alt?: string }) {
     </figure>
   );
 }
-
-export const SECTION_INSTRUCTIONS: Record<string, string> = {
-  reading: 'Read the passage carefully, then answer the questions on the right.',
-  grammar: 'Choose the option that best completes the sentence or is grammatically correct.',
-  listening: 'Listen to the recording. It will play once only. Then answer the questions.',
-  writing: 'Read each item carefully and choose the best-constructed option.',
-};

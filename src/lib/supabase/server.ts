@@ -23,3 +23,15 @@ export function createServiceClient() {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 }
+
+/**
+ * True when Supabase is configured.
+ *
+ * Lets a page render a "not configured" state instead of a 500. The
+ * exam simulator reads from the content bundle and does not need a
+ * database at all, so a missing key must degrade features rather than
+ * take the site down.
+ */
+export function isSupabaseConfigured(): boolean {
+  return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+}
