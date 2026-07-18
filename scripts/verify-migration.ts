@@ -12,23 +12,14 @@
  */
 import { readFileSync } from 'node:fs';
 import { createClient } from '@supabase/supabase-js';
+import { requireSupabaseEnv } from './_env';
 import type { ContentBundle, Question } from '../src/lib/content/schema';
 
-try {
-  for (const line of readFileSync('.env.local', 'utf8').split('\n')) {
-    const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*)\s*$/);
-    if (m && !process.env[m[1]]) process.env[m[1]] = m[2].replace(/^["']|["']$/g, '');
-  }
-} catch { /* ambient env */ }
 
-const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-if (!url || !key) {
-  console.error('Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
-  process.exit(1);
-}
 
-const db = createClient(url, key, { auth: { persistSession: false } });
+const { url, serviceKey } = requireSupabaseEnv();
+
+const db = createClient(url, serviceKey, { auth: { persistSession: false } });
 const bundle: ContentBundle = JSON.parse(readFileSync('content/bundle.json', 'utf8'));
 
 const problems: string[] = [];
