@@ -113,29 +113,77 @@ const note = (s: string) => problems.push(s);
     for (const s of sample) console.log(`    ${s}`);
   }
 
+  /**
+   * Separate genuine loss from intentional deduplication.
+   *
+   * `hashQuestion` sorts the options before hashing, so the same item
+   * with shuffled choices collapses to one hash — which is the point.
+   * The database therefore holds ONE row for such a pair, and the twin
+   * shows up here as "missing". That is the dedup working, not data
+   * loss, and failing on it would block the migration forever.
+   */
+  const dbHashes = new Set(rows.map((r) => r.content_hash as string));
+  const hashById = new Map((expected as Question[]).map((q) => [q.id, q.contentHash]));
+  const merged: string[] = [];
+  const trulyMissing: string[] = [];
+
+  for (const id of missing) {
+    const hash = hashById.get(id);
+    if (hash && dbHashes.has(hash)) merged.push(id);
+    else trulyMissing.push(id);
+  }
+
   console.log(`\ncompared          : ${compared}`);
-  console.log(`missing from DB   : ${missing.length}`);
-  if (missing.length) console.log(`  e.g. ${missing.slice(0, 8).join(', ')}`);
+  console.log(`merged as duplicate: ${merged.length}`);
+  if (merged.length) {
+    for (const id of merged.slice(0, 5)) {
+      const twin = (expected as Question[]).find(
+        (q) => q.id !== id && q.contentHash === hashById.get(id),
+      );
+      console.log(`  ${id} == ${twin?.id ?? '(row already present)'} — same question, shuffled options`);
+    }
+  }
+  console.log(`truly missing     : ${trulyMissing.length}`);
+  if (trulyMissing.length) console.log(`  e.g. ${trulyMissing.slice(0, 8).join(', ')}`);
 
   // Skill coverage is the headline: it is what a naive migration loses.
-  const { data: skillAgg } = await db.from('questions').select('skill_id').not('skill_id', 'is', null);
-  const distinctSkills = new Set((skillAgg ?? []).map((r) => r.skill_id as string));
+  // Derived from the rows ALREADY paged in above — a fresh unpaged query
+  // would silently sample only the first 1,000 and report skills as
+  // "lost" that are simply on page two.
+  const distinctSkills = new Set(
+    rows.map((r) => r.skill_id).filter(Boolean) as string[],
+  );
   console.log(`\ndistinct skills in DB : ${distinctSkills.size}`);
-  const nullSkills = rows.filter((r) => !r.skill_id).length;
-  console.log(`rows with NULL skill  : ${nullSkills}`);
 
   const bundleSkills = new Set(expected.map((q) => q.skillId));
   const lost = [...bundleSkills].filter((s) => !distinctSkills.has(s));
   if (lost.length) note(`skills lost entirely: ${lost.join(', ')}`);
-  if (nullSkills > 0) note(`${nullSkills} row(s) have no skill_id`);
+
+  // Untagged rows are only a problem if they are SERVABLE. Pre-existing
+  // admin-ingested rows were quarantined to draft by migration 0007, so
+  // they are expected here and must not fail the run.
+  const untaggedTotal = rows.filter((r) => !r.skill_id).length;
+  const untaggedPublished = rows.filter((r) => !r.skill_id && r.status === 'published').length;
+  console.log(`rows with NULL skill  : ${untaggedTotal} (published: ${untaggedPublished})`);
+  if (untaggedPublished > 0) {
+    note(`${untaggedPublished} PUBLISHED row(s) have no skill_id — they would pollute the analytics`);
+  }
 
   // Servable pool per section — what the simulator will actually see.
-  const { data: servable } = await db.from('servable_questions').select('category');
+  // Paged for the same reason.
+  const servableRows: Record<string, unknown>[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await db.from('servable_questions').select('category').range(from, from + PAGE - 1);
+    if (error) { console.error(`servable read failed: ${error.message}`); break; }
+    if (!data?.length) break;
+    servableRows.push(...data);
+    if (data.length < PAGE) break;
+  }
   const pool: Record<string, number> = {};
-  for (const r of servable ?? []) pool[r.category as string] = (pool[r.category as string] ?? 0) + 1;
+  for (const r of servableRows) pool[r.category as string] = (pool[r.category as string] ?? 0) + 1;
   console.log(`\nservable pool (what the simulator sees): ${JSON.stringify(pool)}`);
 
-  if (missing.length) note(`${missing.length} question(s) never reached the database`);
+  if (trulyMissing.length) note(`${trulyMissing.length} question(s) never reached the database`);
   if (Object.keys(mismatchCounts).length) {
     note(`${Object.values(mismatchCounts).reduce((a, b) => a + b, 0)} field mismatch(es)`);
   }
