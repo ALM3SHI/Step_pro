@@ -16,6 +16,7 @@
  */
 
 import { SECTION_DEFS, SKILL_BY_ID, type SectionId } from '../content/taxonomy';
+import type { OptionKey } from '../content/schema';
 import type { SessionState } from './session';
 
 export interface SectionScore {
@@ -267,6 +268,79 @@ export interface ReviewRow {
   passageText?: string;
   imageUrl?: string;
   imageAlt?: string;
+}
+
+/**
+ * Seconds attributed to each question.
+ *
+ * A screen's measured time divided by the questions on it. Exact for
+ * single-question screens; an AVERAGE for a reading passage showing five
+ * questions at once, because there is no honest way to know which of
+ * them the candidate was actually thinking about. Every surface that
+ * displays this labels it as an average for multi-question screens.
+ */
+export function secondsPerQuestion(state: SessionState): Record<string, number> {
+  const out: Record<string, number> = {};
+
+  for (const part of state.exam.parts) {
+    part.screens.forEach((screen, screenIndex) => {
+      const key = `${part.index}:${screenIndex}`;
+      const total = state.screenSeconds[key];
+      if (total === undefined || !screen.questionIds.length) return;
+      const share = total / screen.questionIds.length;
+      for (const id of screen.questionIds) out[id] = share;
+    });
+  }
+
+  return out;
+}
+
+/** Per-question outcomes, the shape persisted for longitudinal analysis. */
+export interface QuestionOutcome {
+  questionId: string;
+  section: SectionId;
+  skillId: string | null;
+  difficulty: string;
+  chosenOption: OptionKey | null;
+  correctOption: OptionKey;
+  isCorrect: boolean;
+  wasAnswered: boolean;
+  wasFlagged: boolean;
+  secondsSpent: number | null;
+  partIndex: number;
+  ordinal: number;
+}
+
+export function buildOutcomes(state: SessionState): QuestionOutcome[] {
+  const timing = secondsPerQuestion(state);
+  const out: QuestionOutcome[] = [];
+  let ordinal = 0;
+
+  for (const part of state.exam.parts) {
+    for (const id of part.questionIds) {
+      const q = state.exam.questions[id];
+      if (!q?.correctOption) continue;
+      const chosen = state.answers[id] ?? null;
+      ordinal++;
+
+      out.push({
+        questionId: id,
+        section: part.section,
+        skillId: q.skillId ?? null,
+        difficulty: q.difficulty ?? 'medium',
+        chosenOption: chosen,
+        correctOption: q.correctOption,
+        isCorrect: Boolean(chosen && chosen === q.correctOption),
+        wasAnswered: Boolean(chosen),
+        wasFlagged: Boolean(state.flags[id]),
+        secondsSpent: timing[id] !== undefined ? Number(timing[id].toFixed(2)) : null,
+        partIndex: part.index,
+        ordinal,
+      });
+    }
+  }
+
+  return out;
 }
 
 export function buildReviewRows(state: SessionState): ReviewRow[] {

@@ -24,6 +24,7 @@ import {
 } from '@/lib/exam/session';
 import { useAttemptSync } from '@/lib/exam/useAttemptSync';
 import { openAttempt, submitAttempt } from '@/app/actions/attempts';
+import { buildOutcomes } from '@/lib/exam/scoring';
 import { SECTION_DEFS } from '@/lib/content/taxonomy';
 import type { BuiltExam } from '@/lib/exam/buildExam';
 import type { OptionKey } from '@/lib/content/schema';
@@ -74,9 +75,11 @@ export interface ExamRunnerProps {
   userId?: string;
   /** Saved progress to continue from, instead of starting fresh. */
   resume?: ResumeState;
+  /** Launch a targeted drill from the study plan. */
+  onPractice?: (section: string, count: number) => void;
 }
 
-export function ExamRunner({ exam, onExit, persist = true, userId, resume }: ExamRunnerProps) {
+export function ExamRunner({ exam, onExit, persist = true, userId, resume, onPractice }: ExamRunnerProps) {
   const [state, dispatch] = useReducer(
     sessionReducerWithRevision,
     exam,
@@ -164,7 +167,7 @@ export function ExamRunner({ exam, onExit, persist = true, userId, resume }: Exa
   const begin = useCallback(() => dispatch({ type: 'BEGIN', now: Date.now() }), []);
   const startPart = useCallback(() => dispatch({ type: 'START_PART', now: Date.now() }), []);
   const next = useCallback(() => dispatch({ type: 'NEXT', now: Date.now() }), []);
-  const back = useCallback(() => dispatch({ type: 'BACK' }), []);
+  const back = useCallback(() => dispatch({ type: 'BACK', now: Date.now() }), []);
   const nextPart = useCallback(() => dispatch({ type: 'NEXT_PART', now: Date.now() }), []);
   const expire = useCallback(() => dispatch({ type: 'TIME_EXPIRED', now: Date.now() }), []);
   const finish = useCallback(() => {
@@ -182,6 +185,8 @@ export function ExamRunner({ exam, onExit, persist = true, userId, resume }: Exa
         attemptId,
         stateRef.current.answers,
         allQuestionIds(stateRef.current),
+        // Per-question outcomes power every longitudinal analysis.
+        buildOutcomes(stateRef.current),
       );
     })();
   }, [attemptId, sync]);
@@ -195,7 +200,7 @@ export function ExamRunner({ exam, onExit, persist = true, userId, resume }: Exa
     )) return;
     finish();
   }, [finish]);
-  const jump = useCallback((screenIndex: number) => dispatch({ type: 'GOTO_SCREEN', screenIndex }), []);
+  const jump = useCallback((screenIndex: number) => dispatch({ type: 'GOTO_SCREEN', screenIndex, now: Date.now() }), []);
   const answer = useCallback(
     (questionId: string, option: OptionKey) => dispatch({ type: 'ANSWER', questionId, option }),
     [],
@@ -249,7 +254,7 @@ export function ExamRunner({ exam, onExit, persist = true, userId, resume }: Exa
               {attemptId ? `${SYNC_LABEL[sync.status] || '✓ محفوظ'} · رقم المحاولة ${attemptId.slice(0, 8)}` : '⚠ لم تُحفظ هذه المحاولة'}
             </p>
           )}
-          <ResultsDashboard session={state} onExit={onExit} />
+          <ResultsDashboard session={state} onExit={onExit} onPractice={onPractice} />
         </div>
       </div>
     );

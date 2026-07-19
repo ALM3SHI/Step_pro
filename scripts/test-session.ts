@@ -65,7 +65,7 @@ check('reading allows back after advancing', (() => {
   check('reading part ends at the review grid', t.phase === 'review');
   check('review does not advance the part', t.partIndex === 0);
 
-  const back = run(t, { type: 'GOTO_SCREEN', screenIndex: 0 });
+  const back = run(t, { type: 'GOTO_SCREEN', screenIndex: 0, now: NOW });
   check('review grid jumps back into a question', back.phase === 'question' && back.screenIndex === 0);
   check('answers survive the jump', back.answers[q0] === 'B');
 
@@ -96,9 +96,9 @@ check('reading allows back after advancing', (() => {
   const passed = run(t, { type: 'NEXT', now: NOW });
 
   check('listening: passed screen is locked', isScreenLocked(passed, passed.partIndex, firstScreen));
-  check('listening: BACK is refused', run(passed, { type: 'BACK' }) === passed);
+  check('listening: BACK is refused', run(passed, { type: 'BACK', now: NOW }) === passed);
   check('listening: GOTO_SCREEN is refused',
-    run(passed, { type: 'GOTO_SCREEN', screenIndex: 0 }) === passed);
+    run(passed, { type: 'GOTO_SCREEN', screenIndex: 0, now: NOW }) === passed);
 
   // A locked answer must be immutable even if the screen is forced back.
   const forced = sessionReducer(
@@ -177,13 +177,13 @@ check('reading allows back after advancing', (() => {
   t = sessionReducerWithRevision(t, { type: 'BEGIN', now: NOW });
   check('accepted action bumps revision', t.revision === 1);
   const before = t;
-  t = sessionReducerWithRevision(t, { type: 'BACK' });
+  t = sessionReducerWithRevision(t, { type: 'BACK', now: NOW });
   check('rejected action does not bump revision', t === before);
 }
 
 check('illegal action returns the SAME object', (() => {
   const t = createSession(exam);
-  return sessionReducer(t, { type: 'BACK' }) === t;
+  return sessionReducer(t, { type: 'BACK', now: NOW }) === t;
 })());
 
 let failed = 0;

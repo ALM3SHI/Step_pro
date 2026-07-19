@@ -15,7 +15,14 @@ const ORDER = ['A', 'B', 'C', 'D'] as const;
  * concentrated in the handful missed; opening on "all" buries it and the
  * explanations go unread.
  */
-export const QuestionReview = memo(function QuestionReview({ rows }: { rows: ReviewRow[] }) {
+export const QuestionReview = memo(function QuestionReview({
+  rows,
+  secondsPerQuestion = {},
+}: {
+  rows: ReviewRow[];
+  /** Averaged across a screen when several questions share one. */
+  secondsPerQuestion?: Record<string, number>;
+}) {
   const [filter, setFilter] = useState<Filter>('wrong');
   const [open, setOpen] = useState<Record<string, boolean>>({});
 
@@ -77,6 +84,7 @@ export const QuestionReview = memo(function QuestionReview({ rows }: { rows: Rev
             <ReviewItem
               key={r.id}
               row={r}
+              seconds={secondsPerQuestion[r.id]}
               expanded={Boolean(open[r.id])}
               onToggle={() => setOpen((o) => ({ ...o, [r.id]: !o[r.id] }))}
             />
@@ -89,10 +97,12 @@ export const QuestionReview = memo(function QuestionReview({ rows }: { rows: Rev
 
 function ReviewItem({
   row,
+  seconds,
   expanded,
   onToggle,
 }: {
   row: ReviewRow;
+  seconds?: number;
   expanded: boolean;
   onToggle: () => void;
 }) {
@@ -119,6 +129,10 @@ function ReviewItem({
           <span className="mb-1 flex flex-wrap items-center gap-2 text-xs text-[color:var(--app-muted)]">
             <span className="font-bold">سؤال {row.number}</span>
             <span>{SECTION_LABEL_AR[row.section] ?? row.section}</span>
+            <span>· {row.skillNameAr}</span>
+            {seconds !== undefined && seconds > 0 && (
+              <span className="tabular-nums">· {Math.round(seconds)} ث</span>
+            )}
             {row.flagged && <span className="text-amber-600 dark:text-amber-400">⚑ معلَّم</span>}
             {!row.answered && <span className="text-slate-500">لم تُجب</span>}
           </span>

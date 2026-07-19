@@ -116,6 +116,11 @@ export function ExamLauncher({
         exam={exam}
         persist={persist}
         resume={resume}
+        onPractice={(section, count) => {
+          setExam(null);
+          setResume(undefined);
+          launch(() => startPractice(section as SectionId, count));
+        }}
         onExit={() => { setExam(null); setResume(undefined); setResumable(null); }}
       />
     );

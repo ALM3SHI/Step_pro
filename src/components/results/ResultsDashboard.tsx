@@ -1,99 +1,77 @@
 'use client';
 
 import { useMemo } from 'react';
+import { ScoreHero } from './ScoreHero';
 import { SectionBars } from './SectionBars';
 import { TimeAnalysis } from './TimeAnalysis';
 import { QuestionReview } from './QuestionReview';
 import { SkillBreakdown } from './SkillBreakdown';
-import { bandFor, STATUS } from './palette';
-import { analyzeTime, buildReviewRows, scoreSession } from '@/lib/exam/scoring';
-import { SECTION_DEFS } from '@/lib/content/taxonomy';
+import { InsightsPanel, StudyPlanPanel } from './InsightsPanel';
+import {
+  analyzeTime, buildOutcomes, buildReviewRows, scoreSession, secondsPerQuestion,
+} from '@/lib/exam/scoring';
+import { buildStudyPlan, deriveInsights } from '@/lib/exam/insights';
 import type { SessionState } from '@/lib/exam/session';
 
 /**
  * Post-exam analytics.
  *
- * The headline is the ESTIMATED STEP SCORE with its uncertainty band,
- * not raw accuracy. Showing accuracy as if it were a STEP score is what
- * made the old prototype report ~88 for performance nearer 70.
+ * Ordered by what a candidate needs first: the score, then where the
+ * marks went, then what to do about it, and only then the per-question
+ * review. Everything is derived from this sitting — cross-attempt
+ * trends live on the history page, which has the data for them.
  */
 export function ResultsDashboard({
   session,
   onExit,
+  onPractice,
 }: {
   session: SessionState;
   onExit?: () => void;
+  onPractice?: (section: string, count: number) => void;
 }) {
   const score = useMemo(() => scoreSession(session), [session]);
   const timing = useMemo(() => analyzeTime(session), [session]);
   const rows = useMemo(() => buildReviewRows(session), [session]);
+  const outcomes = useMemo(() => buildOutcomes(session), [session]);
+  const insights = useMemo(() => deriveInsights(outcomes), [outcomes]);
+  const plan = useMemo(() => buildStudyPlan(outcomes), [outcomes]);
+  const perQuestionSeconds = useMemo(() => secondsPerQuestion(session), [session]);
 
-  const band = bandFor(score.weightedPct);
-  const [lo, hi] = score.estimatedStepRange;
+  const flaggedCount = Object.keys(session.flags).length;
 
   return (
     <div className="space-y-5 pb-16">
-      {/* ---------- hero ---------- */}
-      <section className="glass rounded-2xl p-8 text-center">
-        <p className="mb-1 text-sm text-[color:var(--app-muted)]">درجة STEP التقديرية</p>
-
-        <div className="flex items-baseline justify-center gap-2">
-          <b className="text-6xl font-extrabold tabular-nums leading-none" style={{ color: STATUS[band.tone] }}>
-            {score.estimatedStep}
-          </b>
-        </div>
-
-        <p className="mt-1 text-sm text-[color:var(--app-muted)]">
-          النطاق المتوقّع <b className="tabular-nums">{lo}–{hi}</b>
-        </p>
-        <p className="mt-1 text-xs text-[color:var(--app-muted)]">
-          تقدير تقريبي مبني على أدائك، وليس درجة رسمية.
-        </p>
-
-        <div className="mt-4 flex flex-wrap items-center justify-center gap-x-6 gap-y-1 text-sm">
-          <span>الدقة الموزونة <b className="tabular-nums">{score.weightedPct.toFixed(0)}%</b></span>
-          <span className="text-[color:var(--app-muted)]">
-            {score.correct} من {score.total} صحيحة
-          </span>
-          <span className="text-[color:var(--app-muted)]">
-            الدرجة الخام {score.rawPct.toFixed(0)}%
-          </span>
-        </div>
-
-        {score.unanswered > 0 && (
-          <p className="mt-3 text-xs text-amber-700 dark:text-amber-300">
-            تركت {score.unanswered} سؤالًا دون إجابة — وتُحتسب خطأً.
-          </p>
-        )}
-
-        {score.weakestSection && (
-          <p className="mx-auto mt-4 max-w-md rounded-xl bg-black/[0.04] px-4 py-3 text-sm leading-[1.9] dark:bg-white/[0.05]">
-            أكبر مكسب ممكن لدرجتك في قسم{' '}
-            <b>{SECTION_DEFS[score.weakestSection.section].nameAr}</b> — وزنه{' '}
-            {score.weakestSection.weightPct}% ونسبتك فيه{' '}
-            {score.weakestSection.accuracyPct.toFixed(0)}%.
-          </p>
-        )}
-
-        {onExit && (
-          <button
-            type="button"
-            onClick={onExit}
-            className="mt-5 rounded-xl bg-[color:var(--app-brand)] px-6 py-2.5 font-bold text-white"
-          >
-            العودة للرئيسية
-          </button>
-        )}
-      </section>
+      <ScoreHero
+        score={score}
+        usedSeconds={timing.totalUsed}
+        allocatedSeconds={timing.totalAllocated}
+        flaggedCount={flaggedCount}
+        examName={session.exam.nameAr}
+      />
 
       <div className="grid gap-5 lg:grid-cols-2">
         <SectionBars sections={score.bySection} />
         <TimeAnalysis analysis={timing} />
       </div>
 
+      <InsightsPanel insights={insights} />
+
+      <StudyPlanPanel plan={plan} onPractice={onPractice} />
+
       <SkillBreakdown skills={score.bySkill} weakest={score.weakestSkills} />
 
-      <QuestionReview rows={rows} />
+      <QuestionReview rows={rows} secondsPerQuestion={perQuestionSeconds} />
+
+      {onExit && (
+        <button
+          type="button"
+          onClick={onExit}
+          className="glass w-full rounded-2xl py-4 font-bold text-[color:var(--app-brand)]"
+        >
+          العودة للرئيسية
+        </button>
+      )}
     </div>
   );
 }

@@ -47,6 +47,19 @@ export interface SessionState {
   lockedScreens: Record<string, true>;
 
   partTimings: Record<number, PartTiming>;
+
+  /**
+   * Seconds spent on each screen, keyed "partIndex:screenIndex".
+   *
+   * Measured per screen, not per question: reading shows several
+   * questions against one passage and there is no honest way to say
+   * which of them consumed the time. The analytics divide a screen's
+   * time across its questions and label it as an average.
+   */
+  screenSeconds: Record<string, number>;
+  /** When the current screen was entered. Null between screens. */
+  screenEnteredAt: number | null;
+
   /** Bumped per accepted change, for ordered background sync. */
   revision: number;
   startedAt: number | null;
@@ -60,8 +73,8 @@ export type SessionAction =
   | { type: 'REVEAL'; questionId: string }
   | { type: 'TOGGLE_FLAG'; questionId: string }
   | { type: 'NEXT'; now: number }
-  | { type: 'BACK' }
-  | { type: 'GOTO_SCREEN'; screenIndex: number }
+  | { type: 'BACK'; now: number }
+  | { type: 'GOTO_SCREEN'; screenIndex: number; now: number }
   | { type: 'NEXT_PART'; now: number }
   | { type: 'TIME_EXPIRED'; now: number }
   | { type: 'FINISH'; now: number };
@@ -79,6 +92,8 @@ export function createSession(exam: BuiltExam): SessionState {
     maxPartIndex: 0,
     lockedScreens: {},
     partTimings: {},
+    screenSeconds: {},
+    screenEnteredAt: null,
     revision: 0,
     startedAt: null,
     finishedAt: null,
@@ -136,6 +151,21 @@ export const allQuestionIds = (s: SessionState) =>
 
 // --- reducer -----------------------------------------------------------
 
+/**
+ * Bank the time spent on the screen being left.
+ *
+ * Accumulates rather than overwrites, so revisiting a screen from the
+ * review grid adds to its total instead of discarding the first visit.
+ */
+function bankScreenTime(state: SessionState, now: number): Record<string, number> {
+  if (state.screenEnteredAt === null) return state.screenSeconds;
+  const key = screenKey(state.partIndex, state.screenIndex);
+  const elapsed = Math.max(0, (now - state.screenEnteredAt) / 1000);
+  // Ignore sub-second blips from double-clicks; they add noise, not signal.
+  if (elapsed < 0.5) return state.screenSeconds;
+  return { ...state.screenSeconds, [key]: (state.screenSeconds[key] ?? 0) + elapsed };
+}
+
 function openPart(state: SessionState, partIndex: number, now: number): SessionState {
   const part = state.exam.parts[partIndex];
   if (!part) return state;
@@ -145,6 +175,7 @@ function openPart(state: SessionState, partIndex: number, now: number): SessionS
     partIndex,
     screenIndex: 0,
     phase: 'question',
+    screenEnteredAt: now,
     deadlineAt: now + part.durationSeconds * 1000,
     maxPartIndex: Math.max(state.maxPartIndex, partIndex),
     partTimings: {
@@ -171,7 +202,12 @@ function closeTiming(state: SessionState, now: number, expired: boolean) {
 
 function advance(state: SessionState, now: number, expired = false): SessionState {
   const partTimings = closeTiming(state, now, expired);
-  const closed = { ...state, partTimings };
+  const closed = {
+    ...state,
+    partTimings,
+    screenSeconds: bankScreenTime(state, now),
+    screenEnteredAt: null,
+  };
 
   if (isLastPart(state)) {
     return { ...closed, phase: 'finished', deadlineAt: null, finishedAt: now };
@@ -241,15 +277,34 @@ export function sessionReducer(state: SessionState, action: SessionAction): Sess
         : { ...state.lockedScreens, [screenKey(state.partIndex, state.screenIndex)]: true as const };
 
       if (!isLastScreen(state)) {
-        return { ...state, screenIndex: state.screenIndex + 1, lockedScreens };
+        return {
+          ...state,
+          screenIndex: state.screenIndex + 1,
+          lockedScreens,
+          screenSeconds: bankScreenTime(state, action.now),
+          screenEnteredAt: action.now,
+        };
       }
-      if (part.allowsReview) return { ...state, phase: 'review', lockedScreens };
+      if (part.allowsReview) {
+        return {
+          ...state,
+          phase: 'review',
+          lockedScreens,
+          screenSeconds: bankScreenTime(state, action.now),
+          screenEnteredAt: null,
+        };
+      }
       return advance({ ...state, lockedScreens }, action.now);
     }
 
     case 'BACK':
       if (!canGoBack(state)) return state;
-      return { ...state, screenIndex: state.screenIndex - 1 };
+      return {
+        ...state,
+        screenIndex: state.screenIndex - 1,
+        screenSeconds: bankScreenTime(state, action.now),
+        screenEnteredAt: action.now,
+      };
 
     case 'GOTO_SCREEN': {
       const part = currentPart(state);
@@ -257,7 +312,13 @@ export function sessionReducer(state: SessionState, action: SessionAction): Sess
       // grid must not expose it.
       if (!part?.allowsReview) return state;
       if (action.screenIndex < 0 || action.screenIndex >= part.screens.length) return state;
-      return { ...state, phase: 'question', screenIndex: action.screenIndex };
+      return {
+        ...state,
+        phase: 'question',
+        screenIndex: action.screenIndex,
+        screenSeconds: bankScreenTime(state, action.now),
+        screenEnteredAt: action.now,
+      };
     }
 
     case 'NEXT_PART':
@@ -274,6 +335,8 @@ export function sessionReducer(state: SessionState, action: SessionAction): Sess
       return {
         ...state,
         partTimings: closeTiming(state, action.now, false),
+        screenSeconds: bankScreenTime(state, action.now),
+        screenEnteredAt: null,
         phase: 'finished',
         deadlineAt: null,
         finishedAt: action.now,

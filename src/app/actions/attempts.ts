@@ -150,14 +150,67 @@ export interface SubmitResult {
  * Reads the answer keys from the bundle on the server. A score the
  * browser reports is a score the browser can choose.
  */
+export interface OutcomeRow {
+  questionId: string;
+  section: string;
+  skillId: string | null;
+  difficulty: string;
+  chosenOption: string | null;
+  correctOption: string;
+  isCorrect: boolean;
+  wasAnswered: boolean;
+  wasFlagged: boolean;
+  secondsSpent: number | null;
+  partIndex: number;
+  ordinal: number;
+}
+
 export async function submitAttempt(
   attemptId: string,
   answers: Record<string, OptionKey>,
   questionIds: string[],
+  /**
+   * Per-question outcomes.
+   *
+   * Everything longitudinal — skill trends, mistake patterns, where time
+   * goes — needs the result of each question, not just a total. Optional
+   * so an older client that omits it still submits successfully rather
+   * than losing the whole sitting.
+   */
+  outcomes?: OutcomeRow[],
 ): Promise<SubmitResult> {
   try {
     const graded = scoreAgainstBundle(answers, questionIds);
     const db = createServiceClient();
+
+    if (outcomes?.length) {
+      // Written BEFORE the attempt is marked submitted, so a failure
+      // here leaves the attempt resumable instead of graded-but-blank.
+      const rows = outcomes.map((o) => ({
+        attempt_id: attemptId,
+        question_id: o.questionId,
+        section: o.section,
+        skill_id: o.skillId,
+        difficulty: o.difficulty,
+        chosen_option: o.chosenOption,
+        correct_option: o.correctOption,
+        is_correct: o.isCorrect,
+        was_answered: o.wasAnswered,
+        was_flagged: o.wasFlagged,
+        seconds_spent: o.secondsSpent,
+        part_index: o.partIndex,
+        ordinal: o.ordinal,
+      }));
+
+      for (let i = 0; i < rows.length; i += 200) {
+        const { error: oErr } = await db
+          .from('attempt_answers')
+          .upsert(rows.slice(i, i + 200), { onConflict: 'attempt_id,question_id' });
+        // Analytics are valuable but not worth failing a submission
+        // over — the candidate's score still lands either way.
+        if (oErr) console.error('attempt_answers upsert failed:', oErr.message);
+      }
+    }
 
     const { error } = await db
       .from('exam_attempts')
