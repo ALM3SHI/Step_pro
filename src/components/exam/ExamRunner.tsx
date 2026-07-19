@@ -54,17 +54,54 @@ const SECTION_DIRECTIONS: Record<string, string> = {
   writing: 'اقرأ كل بند بعناية واختر الصياغة الأصح.',
 };
 
+export interface ResumeState {
+  attemptId: string;
+  answers: Record<string, OptionKey>;
+  flags: string[];
+  partIndex: number;
+  screenIndex: number;
+  phase: string;
+  partTimings: Record<number, unknown>;
+  lockedScreens: Record<string, true>;
+  revision: number;
+}
+
 export interface ExamRunnerProps {
   exam: BuiltExam;
   onExit: () => void;
   /** Persist to Supabase. Off for previews with no database behind them. */
   persist?: boolean;
   userId?: string;
+  /** Saved progress to continue from, instead of starting fresh. */
+  resume?: ResumeState;
 }
 
-export function ExamRunner({ exam, onExit, persist = true, userId }: ExamRunnerProps) {
-  const [state, dispatch] = useReducer(sessionReducerWithRevision, exam, createSession);
-  const [attemptId, setAttemptId] = useState<string | null>(null);
+export function ExamRunner({ exam, onExit, persist = true, userId, resume }: ExamRunnerProps) {
+  const [state, dispatch] = useReducer(
+    sessionReducerWithRevision,
+    exam,
+    // Restored sittings re-enter at the PART INTRO, never mid-question:
+    // the previous part's clock is gone, so dropping the candidate back
+    // into a live question with a fresh timer would hand them extra time.
+    (e) => {
+      const base = createSession(e);
+      if (!resume) return base;
+      return {
+        ...base,
+        answers: resume.answers,
+        flags: Object.fromEntries(resume.flags.map((id) => [id, true as const])),
+        partIndex: Math.min(resume.partIndex, e.parts.length - 1),
+        screenIndex: 0,
+        phase: 'part-intro' as const,
+        maxPartIndex: Math.min(resume.partIndex, e.parts.length - 1),
+        lockedScreens: resume.lockedScreens,
+        partTimings: resume.partTimings as typeof base.partTimings,
+        revision: resume.revision,
+        startedAt: Date.now(),
+      };
+    },
+  );
+  const [attemptId, setAttemptId] = useState<string | null>(resume?.attemptId ?? null);
   const [showHelp, setShowHelp] = useState(false);
 
   const part = currentPart(state);
@@ -79,12 +116,38 @@ export function ExamRunner({ exam, onExit, persist = true, userId }: ExamRunnerP
   // double-invokes effects in development and would create two attempts.
   const openedRef = useRef(false);
   useEffect(() => {
-    if (!persist || openedRef.current) return;
+    // A resumed sitting already has its row; opening a second would
+    // orphan the first and lose the progress being continued.
+    if (!persist || openedRef.current || resume) return;
     openedRef.current = true;
 
     void openAttempt({
-      blueprintId: exam.blueprintId,
-      seed: exam.seed,
+      // The full skeleton, so a resumed sitting is the SAME paper.
+      // Content is left out and re-fetched by id on resume.
+      skeleton: {
+        blueprintId: exam.blueprintId,
+        seed: exam.seed,
+        nameAr: exam.nameAr,
+        instantFeedback: exam.instantFeedback,
+        totalSeconds: exam.totalSeconds,
+        numberInSection: exam.numberInSection,
+        parts: exam.parts.map((p) => ({
+          index: p.index,
+          section: p.section,
+          partNo: p.partNo,
+          labelAr: p.labelAr,
+          labelEn: p.labelEn,
+          screens: p.screens.map((s) => ({
+            questionIds: s.questionIds,
+            passageId: s.passageId,
+            audioClipId: s.audioClipId,
+          })),
+          questionIds: p.questionIds,
+          durationSeconds: p.durationSeconds,
+          allowsBack: p.allowsBack,
+          allowsReview: p.allowsReview,
+        })),
+      },
       questionIds: exam.parts.flatMap((p) => p.questionIds),
       totalQuestions: exam.totalQuestions,
       userId,
@@ -93,7 +156,7 @@ export function ExamRunner({ exam, onExit, persist = true, userId }: ExamRunnerP
       // sitting, so the exam continues locally and the badge shows it.
       if (res.ok && res.attemptId) setAttemptId(res.attemptId);
     });
-  }, [persist, exam, userId]);
+  }, [persist, exam, userId, resume]);
 
   const sync = useAttemptSync(attemptId, state);
 

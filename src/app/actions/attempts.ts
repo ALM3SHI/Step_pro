@@ -36,10 +36,40 @@ export interface OpenAttemptResult {
   error?: string;
 }
 
-/** Open an attempt row and freeze the exam blueprint against it. */
-export async function openAttempt(input: {
+/**
+ * The exam skeleton stored on the attempt.
+ *
+ * Everything needed to rebuild the paper EXCEPT the question content,
+ * which is re-fetched by id. Storing the part structure is what makes
+ * resume possible at all: replaying the builder with the same seed only
+ * reproduces the exam while the question pool is unchanged, and one
+ * publish or unpublish between sittings would silently hand the
+ * candidate a different paper.
+ */
+export interface ExamSkeleton {
   blueprintId: string;
   seed: number;
+  nameAr: string;
+  instantFeedback: boolean;
+  totalSeconds: number;
+  numberInSection: Record<string, number>;
+  parts: Array<{
+    index: number;
+    section: string;
+    partNo: number;
+    labelAr: string;
+    labelEn: string;
+    screens: Array<{ questionIds: string[]; passageId?: string; audioClipId?: string }>;
+    questionIds: string[];
+    durationSeconds: number;
+    allowsBack: boolean;
+    allowsReview: boolean;
+  }>;
+}
+
+/** Open an attempt row and freeze the exam skeleton against it. */
+export async function openAttempt(input: {
+  skeleton: ExamSkeleton;
   questionIds: string[];
   totalQuestions: number;
   userId?: string;
@@ -53,14 +83,9 @@ export async function openAttempt(input: {
       .insert({
         user_id: input.userId ?? null,
         status: 'in_progress',
-        // Store the seed and ids, not the whole exam: the exam is
-        // reproducible from (blueprintId, seed) plus the bundle version,
-        // and a full BuiltExam would bloat every row.
-        blueprint: {
-          blueprintId: input.blueprintId,
-          seed: input.seed,
-          questionIds: input.questionIds,
-        },
+        // The full skeleton, minus question content. A few KB of JSON,
+        // and the only thing that makes a resumed sitting the SAME paper.
+        blueprint: { ...input.skeleton, questionIds: input.questionIds },
         total_questions: input.totalQuestions,
         current_part: 0,
         max_part_index: 0,
@@ -209,22 +234,141 @@ export async function loadAttempt(attemptId: string) {
   }
 }
 
-/** Most recent unfinished attempt, for a "resume" prompt. */
-export async function findResumableAttempt(userId?: string) {
+export interface ResumableSummary {
+  attemptId: string;
+  nameAr: string;
+  startedAt: string;
+  answered: number;
+  totalQuestions: number;
+  partIndex: number;
+  totalParts: number;
+}
+
+/** Most recent unfinished attempt, for the resume prompt. */
+export async function findResumableAttempt(
+  userId?: string,
+): Promise<{ ok: boolean; attempt?: ResumableSummary | null; error?: string }> {
   try {
     const db = createServiceClient();
     let q = db
       .from('exam_attempts')
-      .select('id, blueprint, current_part, revision, started_at')
+      .select('id, blueprint, answers, current_part, total_questions, started_at')
       .eq('status', 'in_progress')
       .order('started_at', { ascending: false })
       .limit(1);
     if (userId) q = q.eq('user_id', userId);
 
     const { data, error } = await q;
-    if (error) return { ok: false as const, error: error.message };
-    return { ok: true as const, attempt: data?.[0] ?? null };
+    if (error) return { ok: false, error: error.message };
+
+    const row = data?.[0];
+    if (!row) return { ok: true, attempt: null };
+
+    const skeleton = row.blueprint as Partial<ExamSkeleton>;
+    // An attempt opened before skeletons were stored cannot be rebuilt.
+    // Offering to resume it would fail after the candidate committed to
+    // it, so it is simply not offered.
+    if (!Array.isArray(skeleton?.parts) || !skeleton.parts.length) {
+      return { ok: true, attempt: null };
+    }
+
+    return {
+      ok: true,
+      attempt: {
+        attemptId: row.id as string,
+        nameAr: skeleton.nameAr ?? 'اختبار',
+        startedAt: row.started_at as string,
+        answered: Object.keys((row.answers ?? {}) as object).length,
+        totalQuestions: (row.total_questions as number) ?? 0,
+        partIndex: (row.current_part as number) ?? 0,
+        totalParts: skeleton.parts.length,
+      },
+    };
   } catch (err) {
-    return { ok: false as const, error: err instanceof Error ? err.message : String(err) };
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export interface ResumePayload {
+  attemptId: string;
+  skeleton: ExamSkeleton;
+  answers: Record<string, OptionKey>;
+  flags: string[];
+  partIndex: number;
+  screenIndex: number;
+  phase: string;
+  partTimings: Record<number, unknown>;
+  lockedScreens: Record<string, true>;
+  revision: number;
+  /** Ids the skeleton references that no longer resolve to content. */
+  missingQuestionIds: string[];
+}
+
+/**
+ * Load everything needed to continue a sitting.
+ *
+ * Returns the skeleton and the saved progress; the caller re-hydrates
+ * question content through the content provider. Questions that have
+ * since been unpublished are reported rather than silently dropped —
+ * the exam would otherwise change length mid-sitting.
+ */
+export async function resumeAttempt(attemptId: string): Promise<{
+  ok: boolean;
+  payload?: ResumePayload;
+  error?: string;
+}> {
+  try {
+    const db = createServiceClient();
+    const { data, error } = await db
+      .from('exam_attempts')
+      .select('*')
+      .eq('id', attemptId)
+      .eq('status', 'in_progress')
+      .maybeSingle();
+
+    if (error) return { ok: false, error: error.message };
+    if (!data) return { ok: false, error: 'لم تُعثر على محاولة قابلة للاستئناف' };
+
+    const skeleton = data.blueprint as ExamSkeleton & { questionIds?: string[] };
+    if (!Array.isArray(skeleton?.parts) || !skeleton.parts.length) {
+      return { ok: false, error: 'هذه المحاولة قديمة ولا تحتوي على هيكل الاختبار' };
+    }
+
+    const flags = (data.flags ?? []) as string[];
+
+    return {
+      ok: true,
+      payload: {
+        attemptId,
+        skeleton,
+        answers: (data.answers ?? {}) as Record<string, OptionKey>,
+        flags,
+        partIndex: (data.current_part as number) ?? 0,
+        screenIndex: (data.screen_index as number) ?? 0,
+        phase: (data.phase as string) ?? 'part-intro',
+        partTimings: (data.part_timings ?? {}) as Record<number, unknown>,
+        lockedScreens: (data.locked_screens ?? {}) as Record<string, true>,
+        revision: (data.revision as number) ?? 0,
+        missingQuestionIds: [],
+      },
+    };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** Abandon an attempt so it stops being offered for resume. */
+export async function abandonAttempt(attemptId: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const db = createServiceClient();
+    const { error } = await db
+      .from('exam_attempts')
+      .update({ status: 'abandoned' })
+      .eq('id', attemptId)
+      .eq('status', 'in_progress');
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
