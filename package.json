@@ -18,7 +18,6 @@
     "migrate:dry": "tsx scripts/migrate-to-supabase.ts --dry",
     "migrate:run": "tsx scripts/migrate-to-supabase.ts",
     "migrate:verify": "tsx scripts/verify-migration.ts",
-    
     "content:build": "tsx scripts/extract-legacy-bank.ts && tsx scripts/build-content.ts",
     "content:check": "tsx scripts/check-blueprint-feasibility.ts",
     "test": "tsx scripts/test-content-layer.ts && tsx scripts/test-build-exam.ts && tsx scripts/test-session.ts && tsx scripts/test-fastkey.ts && tsx scripts/test-sha256.ts && tsx scripts/test-small-batch.ts && tsx scripts/test-solver.ts"
@@ -35,6 +34,7 @@
     "@types/node": "^22.10.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "server-only": "^0.0.1",
     "tailwindcss": "^4.0.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0"

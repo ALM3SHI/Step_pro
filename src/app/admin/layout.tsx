@@ -1,18 +1,21 @@
 import Link from 'next/link';
+import { activeContentSource } from '@/lib/content/activeProvider';
 
 const TABS = [
-  { href: '/admin/hybrid', label: 'الإدخال الهجين' },
-  { href: '/admin/listening', label: 'الاستماع' },
-  { href: '/admin', label: 'المعالجة الآلية' },
-  { href: '/admin/history', label: 'سجل التسليمات' },
+  { href: '/admin', label: 'التجميعات' },
+  { href: '/exam', label: 'المحاكي' },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
+  // Shown so the live source is never a guess — the whole point of the
+  // migration was that there is exactly one.
+  let source = 'bundle';
+  try { source = activeContentSource(); } catch { /* unconfigured */ }
+
   return (
     <div className="min-h-screen">
-      {/* Ambient wash — gives the glass surfaces something to refract.
-          Without a non-flat backdrop, backdrop-filter renders as plain
-          translucency and the effect reads as muddy grey. */}
+      {/* Ambient wash — without a non-flat backdrop, backdrop-filter
+          renders as plain translucency and the glass reads as grey. */}
       <div
         aria-hidden
         className="pointer-events-none fixed inset-0 -z-10"
@@ -28,8 +31,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-4">
           <div>
             <b className="text-xl tracking-tight text-[color:var(--app-brand)]">ستيب برو</b>
-            <span className="mr-2 text-xs text-[color:var(--app-muted)]">لوحة الإدخال والمعالجة</span>
+            <span className="mr-2 text-xs text-[color:var(--app-muted)]">لوحة المحتوى</span>
           </div>
+
           <nav className="flex gap-2">
             {TABS.map((t) => (
               <Link
@@ -41,6 +45,19 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               </Link>
             ))}
           </nav>
+
+          <span className="flex-1" />
+
+          <span
+            className={`rounded-full px-3 py-1 text-xs font-bold ${
+              source === 'supabase'
+                ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+                : 'bg-amber-500/15 text-amber-700 dark:text-amber-300'
+            }`}
+            title="مصدر المحتوى الحالي"
+          >
+            {source === 'supabase' ? '● Supabase' : '● حزمة محلية'}
+          </span>
         </div>
       </header>
 
