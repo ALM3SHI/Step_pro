@@ -1,7 +1,8 @@
 'use client';
 
 import { memo } from 'react';
-import { SECTION_COLOR_LIGHT, SECTION_LABEL_AR } from './palette';
+import { SECTION_LABEL_AR } from './palette';
+import { Badge, Card, Delta, SectionTitle } from '@/components/ui';
 import type { AttemptSummary } from '@/app/actions/analytics';
 
 const clock = (s: number) => {
@@ -25,15 +26,14 @@ export const AttemptHistory = memo(function AttemptHistory({
   const chrono = [...attempts].reverse();
 
   return (
-    <section className="glass rounded-2xl p-6" aria-labelledby="history-title">
-      <h2 id="history-title" className="mb-1 text-lg font-bold">سجل المحاولات</h2>
-      <p className="mb-5 text-sm text-[color:var(--app-muted)]">
-        {attempts.length} محاولة مكتملة
-      </p>
+    <Card className="p-6" aria-labelledby="history-title">
+      <SectionTitle id="history-title" hint={`${attempts.length} محاولة مكتملة`}>
+        سجل المحاولات
+      </SectionTitle>
 
       {chrono.length > 1 && <Sparkline attempts={chrono} />}
 
-      <ul className="mt-5 space-y-3">
+      <ul className="stagger mt-5 space-y-3">
         {attempts.map((a) => (
           <li key={a.id} className="rounded-xl bg-black/[0.03] p-4 dark:bg-white/[0.04]">
             <div className="mb-2 flex flex-wrap items-baseline gap-2">
@@ -41,15 +41,7 @@ export const AttemptHistory = memo(function AttemptHistory({
                 {a.estimatedStep}
               </b>
               {a.deltaVsPrevious !== null && Math.abs(a.deltaVsPrevious) >= 3 && (
-                <span
-                  className={`text-xs font-bold tabular-nums ${
-                    a.deltaVsPrevious > 0
-                      ? 'text-emerald-700 dark:text-emerald-300'
-                      : 'text-red-700 dark:text-red-300'
-                  }`}
-                >
-                  {a.deltaVsPrevious > 0 ? '▲' : '▼'} {Math.abs(a.deltaVsPrevious)}
-                </span>
+                <Delta value={a.deltaVsPrevious} />
               )}
               <span className="text-xs text-[color:var(--app-muted)]">{a.examName}</span>
               <span className="flex-1" />
@@ -78,23 +70,19 @@ export const AttemptHistory = memo(function AttemptHistory({
             {/* Per-section split, so a single number never hides where
                 the marks actually went. */}
             <div className="flex flex-wrap gap-1.5">
+              {/* The section hue comes from the themed token, not the
+                  light-mode constant — these chips were unreadable in
+                  dark mode because the palette never followed the theme. */}
               {Object.entries(a.bySection).map(([sec, v]) => (
-                <span
-                  key={sec}
-                  className="rounded-full px-2.5 py-0.5 text-[0.68rem] tabular-nums"
-                  style={{
-                    background: `${SECTION_COLOR_LIGHT[sec] ?? '#888'}22`,
-                    color: SECTION_COLOR_LIGHT[sec] ?? undefined,
-                  }}
-                >
+                <Badge key={sec} color={`var(--sec-${sec})`} className="tabular-nums">
                   {SECTION_LABEL_AR[sec] ?? sec} {v.pct.toFixed(0)}%
-                </span>
+                </Badge>
               ))}
             </div>
           </li>
         ))}
       </ul>
-    </section>
+    </Card>
   );
 });
 

@@ -2,6 +2,7 @@
 
 import { memo } from 'react';
 import { SECTION_LABEL_AR, STATUS } from './palette';
+import { Alert, Card, Meter, SectionTitle } from '@/components/ui';
 import type { SkillScore } from '@/lib/exam/scoring';
 
 /**
@@ -23,24 +24,23 @@ export const SkillBreakdown = memo(function SkillBreakdown({
   const weakIds = new Set(weakest.map((s) => s.skillId));
 
   return (
-    <section className="glass rounded-2xl p-6" aria-labelledby="skills-title">
-      <h2 id="skills-title" className="mb-1 text-lg font-bold">تحليل المهارات</h2>
-      <p className="mb-5 text-sm text-[color:var(--app-muted)]">
-        مرتّبة من الأضعف. المهارات ذات المحاولات القليلة غير كافية للحكم.
-      </p>
+    <Card className="p-6" aria-labelledby="skills-title">
+      <SectionTitle id="skills-title" hint="مرتّبة من الأضعف. المهارات ذات المحاولات القليلة غير كافية للحكم.">
+        تحليل المهارات
+      </SectionTitle>
 
       {weakest.length > 0 && (
-        <div className="mb-5 rounded-xl bg-amber-500/10 px-4 py-3">
-          <b className="mb-1 block text-sm text-amber-900 dark:text-amber-200">
-            ابدأ من هنا
-          </b>
-          <ul className="space-y-0.5 text-sm text-amber-900 dark:text-amber-200">
-            {weakest.map((s) => (
-              <li key={s.skillId}>
-                {s.nameAr} — {s.correct}/{s.total} ({s.accuracyPct.toFixed(0)}%)
-              </li>
-            ))}
-          </ul>
+        <div className="mb-5">
+          <Alert tone="warn">
+            <b className="mb-1 block">ابدأ من هنا</b>
+            <ul className="space-y-0.5">
+              {weakest.map((s) => (
+                <li key={s.skillId}>
+                  {s.nameAr} — {s.correct}/{s.total} ({s.accuracyPct.toFixed(0)}%)
+                </li>
+              ))}
+            </ul>
+          </Alert>
         </div>
       )}
 
@@ -67,20 +67,15 @@ export const SkillBreakdown = memo(function SkillBreakdown({
                 </span>
                 {thin && <span className="text-[0.65rem] text-[color:var(--app-muted)]">عينة صغيرة</span>}
               </div>
-              <div
-                className="h-2 w-full overflow-hidden rounded-full bg-black/[0.07] dark:bg-white/[0.09]"
-                role="img"
-                aria-label={`${s.nameAr}: ${s.accuracyPct.toFixed(0)} بالمئة، ${s.correct} من ${s.total}`}
-              >
-                <div
-                  className="h-full rounded-full transition-[width] duration-700 ease-out"
-                  style={{ width: `${Math.max(1.5, s.accuracyPct)}%`, background: tone }}
-                />
-              </div>
+              <Meter
+                value={s.accuracyPct}
+                color={tone}
+                label={`${s.nameAr}: ${s.accuracyPct.toFixed(0)} بالمئة، ${s.correct} من ${s.total}`}
+              />
             </li>
           );
         })}
       </ul>
-    </section>
+    </Card>
   );
 });

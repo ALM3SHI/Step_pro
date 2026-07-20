@@ -3,6 +3,7 @@ import { getProgressOverview } from '@/app/actions/analytics';
 import { LevelCard } from '@/components/results/LevelCard';
 import { AttemptHistory } from '@/components/results/AttemptHistory';
 import { SkillTrendTable } from '@/components/results/SkillTrendTable';
+import { Alert, Card, EmptyState, PageHeader, linkClass } from '@/components/ui';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,9 +13,7 @@ export default async function ProgressPage() {
   if (!res.ok) {
     return (
       <main className="mx-auto max-w-4xl px-6 py-12">
-        <p className="glass rounded-2xl px-5 py-4 text-sm text-red-700 dark:text-red-300">
-          تعذّر تحميل التقدم: {res.error}
-        </p>
+        <Alert tone="bad">تعذّر تحميل التقدم: {res.error}</Alert>
       </main>
     );
   }
@@ -24,29 +23,33 @@ export default async function ProgressPage() {
   if (!attempts.length) {
     return (
       <main className="mx-auto max-w-4xl space-y-5 px-6 py-12">
-        <h1 className="text-2xl font-bold text-[color:var(--app-brand)]">تقدّمي</h1>
-        <p className="glass rounded-2xl px-5 py-10 text-center text-[color:var(--app-muted)]">
-          لم تُكمل أي اختبار بعد. أكمل اختبارًا وستظهر هنا درجتك وتحليل مهاراتك وتطوّرك.
-        </p>
-        <Link
-          href="/exam"
-          className="block rounded-xl bg-[color:var(--app-brand)] py-3.5 text-center text-lg font-bold text-white"
-        >
-          ابدأ اختبارًا
-        </Link>
+        <PageHeader title="تقدّمي" />
+        <Card>
+          <EmptyState
+            icon="📈"
+            title="لم تُكمل أي اختبار بعد"
+            body="أكمل اختبارًا وستظهر هنا درجتك وتحليل مهاراتك وتطوّرك."
+            action={
+              <Link href="/exam" className={linkClass({ variant: 'primary', size: 'lg' })}>
+                ابدأ اختبارًا
+              </Link>
+            }
+          />
+        </Card>
       </main>
     );
   }
 
   return (
     <main className="mx-auto max-w-4xl space-y-5 px-6 py-12">
-      <header className="flex flex-wrap items-baseline gap-3">
-        <h1 className="text-2xl font-bold text-[color:var(--app-brand)]">تقدّمي</h1>
-        <span className="flex-1" />
-        <Link href="/exam" className="text-sm font-semibold text-[color:var(--app-brand)] hover:underline">
-          اختبار جديد ←
-        </Link>
-      </header>
+      <PageHeader
+        title="تقدّمي"
+        action={
+          <Link href="/exam" className={linkClass({ variant: 'ghost', size: 'sm' })}>
+            اختبار جديد ←
+          </Link>
+        }
+      />
 
       <LevelCard attempts={attempts} hasTrend={hasTrend} />
       <SkillTrendTable skills={skills} hasTrend={hasTrend} />

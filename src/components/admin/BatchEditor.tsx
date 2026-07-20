@@ -9,6 +9,7 @@ import {
 import { SECTION_DEFS, SKILL_BY_ID } from '@/lib/content/taxonomy';
 import { validateDraft, type DraftQuestion } from '@/lib/content/validation';
 import type { BatchSummary, ContentStatus, AudioClipRef, EditableQuestion, PassageRef } from '@/lib/content/repository';
+import { Alert, Button, Card, EmptyState, Pill, inputClass } from '@/components/ui';
 
 const STATUS_STYLE: Record<string, string> = {
   published: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
@@ -195,44 +196,34 @@ export function BatchEditor({
   return (
     <div className="space-y-4">
       {message && (
-        <p className={`rounded-xl px-4 py-3 text-sm ${
-          message.tone === 'ok'
-            ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
-            : 'bg-red-500/10 text-red-700 dark:text-red-300'
-        }`}>
-          {message.text}
-        </p>
+        <Alert tone={message.tone === 'ok' ? 'good' : 'bad'}>{message.text}</Alert>
       )}
 
       {/* --- toolbar --- */}
-      <div className="glass sticky top-24 z-30 space-y-3 rounded-2xl p-4">
+      <Card as="div" className="sticky top-24 z-30 space-y-3 p-4">
         <div className="flex flex-wrap items-center gap-2">
           {TABS.map(([key, label]) => (
-            <button
+            <Pill
               key={key}
-              type="button"
+              active={filter === key}
               onClick={() => setFilter(key)}
               disabled={counts[key] === 0 && key !== 'all'}
-              className={`rounded-full px-3.5 py-1.5 text-sm font-semibold disabled:opacity-40 ${
-                filter === key ? 'bg-[color:var(--app-brand)] text-white' : 'border border-[color:var(--app-line)]'
-              }`}
             >
-              {label} ({counts[key]})
-            </button>
+              {label} <span className="tabular-nums opacity-70">({counts[key]})</span>
+            </Pill>
           ))}
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="بحث في النص أو الخيارات أو الشرح…"
-            className="min-w-[200px] flex-1 rounded-lg border border-[color:var(--app-line)] bg-transparent px-3 py-1.5 text-sm"
+            className={inputClass({ className: 'min-w-[200px] flex-1' })}
           />
-          <button
-            type="button"
+          <Button
+            variant="primary"
             onClick={() => { setAdding(true); setEditingId(null); setDraft(emptyDraft()); setServerError(null); }}
-            className="rounded-xl bg-[color:var(--app-brand)] px-4 py-2 text-sm font-bold text-white"
           >
             + سؤال جديد
-          </button>
+          </Button>
         </div>
 
         {selected.size > 0 && (
@@ -240,21 +231,15 @@ export function BatchEditor({
             <span className="text-sm font-semibold">{selected.size} محدَّد</span>
             <span className="flex-1" />
             {(['published', 'draft', 'review'] as ContentStatus[]).map((s) => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => bulkStatus(s)}
-                disabled={pending}
-                className="rounded-lg border border-[color:var(--app-line)] px-3 py-1 text-xs font-semibold"
-              >
+              <Button key={s} size="sm" onClick={() => bulkStatus(s)} disabled={pending}>
                 → {STATUS_LABELS[s]}
-              </button>
+              </Button>
             ))}
             {otherBatches.length > 0 && (
               <select
                 onChange={(e) => { bulkMove(e.target.value); e.target.value = ''; }}
                 defaultValue=""
-                className="rounded-lg border border-[color:var(--app-line)] bg-transparent px-3 py-1 text-xs"
+                className={inputClass({ className: 'w-auto py-1 text-xs' })}
               >
                 <option value="">نقل إلى…</option>
                 {otherBatches.map((b) => (
@@ -262,20 +247,16 @@ export function BatchEditor({
                 ))}
               </select>
             )}
-            <button
-              type="button"
-              onClick={() => setSelected(new Set())}
-              className="text-xs text-[color:var(--app-muted)] underline"
-            >
+            <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>
               إلغاء التحديد
-            </button>
+            </Button>
           </div>
         )}
-      </div>
+      </Card>
 
       {/* --- new question --- */}
       {adding && draft && (
-        <section className="glass rounded-2xl p-5">
+        <Card className="p-5">
           <h3 className="mb-4 text-base font-bold">سؤال جديد</h3>
           <QuestionForm
             value={draft}
@@ -292,7 +273,7 @@ export function BatchEditor({
             canSave={canSave}
             onCancel={() => { setAdding(false); setDraft(null); setServerError(null); }}
           />
-        </section>
+        </Card>
       )}
 
       {/* --- list --- */}
@@ -303,9 +284,12 @@ export function BatchEditor({
       )}
 
       {visible.length === 0 ? (
-        <p className="glass rounded-2xl px-5 py-8 text-center text-[color:var(--app-muted)]">
-          {search ? 'لا نتائج لهذا البحث.' : 'لا توجد أسئلة في هذا التصنيف.'}
-        </p>
+        <Card>
+          <EmptyState
+            icon={search ? '🔍' : '📝'}
+            title={search ? 'لا نتائج لهذا البحث' : 'لا توجد أسئلة في هذا التصنيف'}
+          />
+        </Card>
       ) : (
         <ul className="space-y-3">
           {visible.map((q) => {
@@ -313,7 +297,7 @@ export function BatchEditor({
             const idx = questions.findIndex((x) => x.id === q.id);
 
             return (
-              <li key={q.id} className="glass rounded-2xl p-4">
+              <Card key={q.id} as="li" className="p-4">
                 <div className="mb-2 flex flex-wrap items-center gap-2">
                   <input
                     type="checkbox"
@@ -350,31 +334,31 @@ export function BatchEditor({
 
                   <span className="flex-1" />
 
-                  <button type="button" onClick={() => nudge(q.id, -1)} disabled={idx === 0 || pending}
-                    className="rounded px-2 text-sm disabled:opacity-30" aria-label="لأعلى">▲</button>
-                  <button type="button" onClick={() => nudge(q.id, 1)} disabled={idx === questions.length - 1 || pending}
-                    className="rounded px-2 text-sm disabled:opacity-30" aria-label="لأسفل">▼</button>
-                  <button
-                    type="button"
+                  <Button variant="ghost" size="sm" onClick={() => nudge(q.id, -1)}
+                    disabled={idx === 0 || pending} aria-label="لأعلى">▲</Button>
+                  <Button variant="ghost" size="sm" onClick={() => nudge(q.id, 1)}
+                    disabled={idx === questions.length - 1 || pending} aria-label="لأسفل">▼</Button>
+                  <Button
+                    size="sm"
                     onClick={() => {
                       setEditingId(isEditing ? null : q.id);
                       setDraft(isEditing ? null : toDraft(q));
                       setAdding(false);
                       setServerError(null);
                     }}
-                    className="rounded-lg border border-[color:var(--app-line)] px-3 py-1 text-xs font-semibold"
                   >
                     {isEditing ? 'إغلاق' : 'تعديل'}
-                  </button>
-                  <button
-                    type="button"
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={() => remove(q.id)}
                     disabled={pending}
-                    className="rounded-lg px-2 py-1 text-sm text-red-600 hover:bg-red-500/10"
+                    className="text-red-600 hover:bg-red-500/10"
                     aria-label="حذف"
                   >
                     ✕
-                  </button>
+                  </Button>
                 </div>
 
                 {isEditing && draft ? (
@@ -418,20 +402,16 @@ export function BatchEditor({
                     </div>
                   </>
                 )}
-              </li>
+              </Card>
             );
           })}
         </ul>
       )}
 
       {filtered.length > visible.length && (
-        <button
-          type="button"
-          onClick={() => setLimit((n) => n + PAGE_SIZE)}
-          className="glass w-full rounded-2xl py-3 text-sm font-bold"
-        >
+        <Button block onClick={() => setLimit((n) => n + PAGE_SIZE)}>
           عرض {Math.min(PAGE_SIZE, filtered.length - visible.length)} إضافية
-        </button>
+        </Button>
       )}
     </div>
   );
@@ -452,33 +432,27 @@ function FormActions({
 
   return (
     <div className="mt-4 flex flex-wrap gap-2">
-      <button
-        type="button"
+      <Button
         onClick={onSave}
         disabled={pending || !canSave}
         title={canSave ? undefined : 'أكمل الحقول المطلوبة أولًا'}
-        className="rounded-xl bg-emerald-600 px-6 py-2.5 text-sm font-bold text-white disabled:opacity-50"
+        variant="primary"
+        className="bg-emerald-600"
       >
         {pending ? '…جارٍ الحفظ' : 'حفظ'}
-      </button>
+      </Button>
       {isDuplicate && (
-        <button
-          type="button"
+        <Button
           onClick={onSaveAnyway}
           disabled={pending}
-          className="rounded-xl border border-amber-500 px-4 py-2.5 text-sm font-semibold text-amber-700 dark:text-amber-300"
+          className="border-amber-500 text-amber-700 dark:text-amber-300"
         >
           حفظ رغم التكرار
-        </button>
+        </Button>
       )}
-      <button
-        type="button"
-        onClick={onCancel}
-        disabled={pending}
-        className="rounded-xl border border-[color:var(--app-line)] px-4 py-2.5 text-sm font-semibold"
-      >
+      <Button onClick={onCancel} disabled={pending}>
         إلغاء
-      </button>
+      </Button>
     </div>
   );
 }

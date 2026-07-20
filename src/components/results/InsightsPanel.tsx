@@ -1,6 +1,7 @@
 'use client';
 
 import { memo } from 'react';
+import { Alert, Button, Card, SectionTitle } from '@/components/ui';
 import type { Insight, StudyPlan } from '@/lib/exam/insights';
 
 const KIND_STYLE: Record<Insight['kind'], { icon: string; ring: string }> = {
@@ -23,20 +24,21 @@ export const InsightsPanel = memo(function InsightsPanel({
   insights: Insight[];
 }) {
   return (
-    <section className="glass rounded-2xl p-6" aria-labelledby="insights-title">
-      <h2 id="insights-title" className="mb-1 text-lg font-bold">ما لاحظناه في أدائك</h2>
-
+    <Card className="p-6" aria-labelledby="insights-title">
       {insights.length === 0 ? (
-        <p className="mt-3 rounded-xl bg-black/[0.04] px-4 py-4 text-sm leading-[1.9] text-[color:var(--app-muted)] dark:bg-white/[0.05]">
-          لا توجد أنماط واضحة في هذه المحاولة. عدد الأسئلة في كل مهارة غير كافٍ
-          لاستنتاج شيء موثوق — أكمل اختبارًا كاملًا آخر وستظهر الأنماط.
-        </p>
+        <>
+          <SectionTitle id="insights-title">ما لاحظناه في أدائك</SectionTitle>
+          <Alert>
+            لا توجد أنماط واضحة في هذه المحاولة. عدد الأسئلة في كل مهارة غير كافٍ
+            لاستنتاج شيء موثوق — أكمل اختبارًا كاملًا آخر وستظهر الأنماط.
+          </Alert>
+        </>
       ) : (
         <>
-          <p className="mb-4 text-sm text-[color:var(--app-muted)]">
-            كل ملاحظة مبنية على أرقام فعلية من محاولتك، وليست تقديرًا.
-          </p>
-          <ul className="space-y-2.5">
+          <SectionTitle id="insights-title" hint="كل ملاحظة مبنية على أرقام فعلية من محاولتك، وليست تقديرًا.">
+            ما لاحظناه في أدائك
+          </SectionTitle>
+          <ul className="stagger space-y-2.5">
             {insights.map((ins, i) => {
               const s = KIND_STYLE[ins.kind];
               return (
@@ -57,7 +59,7 @@ export const InsightsPanel = memo(function InsightsPanel({
           </ul>
         </>
       )}
-    </section>
+    </Card>
   );
 });
 
@@ -69,16 +71,13 @@ export const StudyPlanPanel = memo(function StudyPlanPanel({
   onPractice?: (section: string, count: number) => void;
 }) {
   return (
-    <section className="glass rounded-2xl p-6" aria-labelledby="plan-title">
-      <h2 id="plan-title" className="mb-1 text-lg font-bold">{plan.headline}</h2>
-      <p className="mb-4 text-xs text-[color:var(--app-muted)]">{plan.basedOn}</p>
+    <Card className="p-6" aria-labelledby="plan-title">
+      <SectionTitle id="plan-title" hint={plan.basedOn}>{plan.headline}</SectionTitle>
 
       {plan.tasks.length === 0 ? (
-        <p className="rounded-xl bg-black/[0.04] px-4 py-4 text-sm text-[color:var(--app-muted)] dark:bg-white/[0.05]">
-          لا توجد بيانات كافية لبناء خطة.
-        </p>
+        <Alert>لا توجد بيانات كافية لبناء خطة.</Alert>
       ) : (
-        <ol className="space-y-2.5">
+        <ol className="stagger space-y-2.5">
           {plan.tasks.map((t, i) => (
             <li
               key={i}
@@ -92,18 +91,18 @@ export const StudyPlanPanel = memo(function StudyPlanPanel({
                 <span className="text-xs text-[color:var(--app-muted)]">{t.detail}</span>
               </span>
               {onPractice && t.section && (
-                <button
-                  type="button"
+                <Button
+                  variant="accent"
+                  size="sm"
                   onClick={() => onPractice(t.section!, t.questionCount ?? 10)}
-                  className="rounded-lg bg-[color:var(--app-accent)] px-4 py-1.5 text-xs font-bold text-[#221503]"
                 >
                   ابدأ التدريب
-                </button>
+                </Button>
               )}
             </li>
           ))}
         </ol>
       )}
-    </section>
+    </Card>
   );
 });

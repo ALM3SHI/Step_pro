@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { BatchEditor } from '@/components/admin/BatchEditor';
 import { listAudioClips, listBatches, listPassages, listQuestions } from '@/lib/content/repository';
 import { isSupabaseConfigured } from '@/lib/supabase/server';
+import { Alert, Card } from '@/components/ui';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,7 +11,7 @@ export default async function BatchPage({ params }: { params: Promise<{ id: stri
   const { id } = await params;
 
   if (!isSupabaseConfigured()) {
-    return <p className="glass rounded-2xl p-6">لم تُضبط متغيّرات Supabase.</p>;
+    return <Alert tone="warn">لم تُضبط متغيّرات Supabase.</Alert>;
   }
 
   // Loaded in parallel — these are four independent reads and the editor
@@ -27,7 +28,7 @@ export default async function BatchPage({ params }: { params: Promise<{ id: stri
 
   return (
     <div className="space-y-4">
-      <header className="glass rounded-2xl p-5">
+      <Card as="div" className="p-5">
         <Link href="/admin" className="text-xs text-[color:var(--app-muted)] hover:underline">
           ← كل التجميعات
         </Link>
@@ -37,7 +38,7 @@ export default async function BatchPage({ params }: { params: Promise<{ id: stri
           {batch.counts.review > 0 && ` · للمراجعة ${batch.counts.review}`}
         </p>
         {batch.notes && <p className="mt-1 text-xs text-[color:var(--app-muted)]">{batch.notes}</p>}
-      </header>
+      </Card>
 
       <BatchEditor
         batch={batch}

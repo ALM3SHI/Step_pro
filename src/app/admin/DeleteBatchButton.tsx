@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { deleteBatchAction } from '@/app/actions/content';
+import { Button, inputClass } from '@/components/ui';
 
 /**
  * Cascade delete.
@@ -62,25 +63,22 @@ export function DeleteBatchButton({
         onChange={(e) => setTyped(e.target.value)}
         inputMode="numeric"
         autoFocus
-        className="rounded-lg border border-[color:var(--app-line)] bg-transparent px-3 py-1.5 text-center text-sm tabular-nums"
+        className={inputClass({ className: 'text-center tabular-nums' })}
       />
       {error && <p className="text-xs text-red-600">{error}</p>}
       <div className="flex gap-2">
-        <button
-          type="button"
+        <Button
+          variant="danger"
+          size="sm"
+          className="flex-1"
           onClick={doDelete}
           disabled={typed.trim() !== expected || pending}
-          className="flex-1 rounded-lg bg-red-600 py-1.5 text-xs font-bold text-white disabled:opacity-40"
         >
           {pending ? '…' : 'حذف'}
-        </button>
-        <button
-          type="button"
-          onClick={() => setConfirming(false)}
-          className="flex-1 rounded-lg border border-[color:var(--app-line)] py-1.5 text-xs font-semibold"
-        >
+        </Button>
+        <Button size="sm" className="flex-1" onClick={() => setConfirming(false)}>
           إلغاء
-        </button>
+        </Button>
       </div>
     </div>
   );

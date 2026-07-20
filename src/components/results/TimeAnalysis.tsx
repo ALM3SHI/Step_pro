@@ -2,6 +2,7 @@
 
 import { memo } from 'react';
 import { SECTION_LABEL_AR, STATUS } from './palette';
+import { Badge, Card, Meter } from '@/components/ui';
 import type { analyzeTime } from '@/lib/exam/scoring';
 
 const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
@@ -25,7 +26,7 @@ export const TimeAnalysis = memo(function TimeAnalysis({
     : 0;
 
   return (
-    <section className="glass rounded-2xl p-6" aria-labelledby="time-title">
+    <Card className="p-6" aria-labelledby="time-title">
       <div className="mb-5 flex flex-wrap items-baseline gap-3">
         <h2 id="time-title" className="text-lg font-bold">إدارة الوقت</h2>
         <span className="flex-1" />
@@ -47,27 +48,18 @@ export const TimeAnalysis = memo(function TimeAnalysis({
                   <span className="mr-1 text-xs text-[color:var(--app-muted)]"> — جزء {p.partNo}</span>
                 </span>
                 <span className="flex-1" />
-                {p.expired && (
-                  <span className="rounded-full bg-red-500/15 px-2 py-0.5 text-[0.7rem] font-bold text-red-700 dark:text-red-300">
-                    انتهى الوقت
-                  </span>
-                )}
+                {p.expired && <Badge tone="bad">انتهى الوقت</Badge>}
                 <span className="tabular-nums text-xs text-[color:var(--app-muted)]">
                   {clock(p.usedSeconds)} / {clock(p.allocatedSeconds)}
                 </span>
                 <b className="tabular-nums">{p.usagePct.toFixed(0)}%</b>
               </div>
 
-              <div
-                className="h-2 w-full overflow-hidden rounded-full bg-black/[0.07] dark:bg-white/[0.09]"
-                role="img"
-                aria-label={`${SECTION_LABEL_AR[p.section]} جزء ${p.partNo}: استخدمت ${clock(p.usedSeconds)} من ${clock(p.allocatedSeconds)}${p.expired ? '، انتهى الوقت' : ''}`}
-              >
-                <div
-                  className="h-full rounded-full transition-[width] duration-700 ease-out"
-                  style={{ width: `${Math.max(1.5, Math.min(100, p.usagePct))}%`, background: tone }}
-                />
-              </div>
+              <Meter
+                value={p.usagePct}
+                color={tone}
+                label={`${SECTION_LABEL_AR[p.section]} جزء ${p.partNo}: استخدمت ${clock(p.usedSeconds)} من ${clock(p.allocatedSeconds)}${p.expired ? '، انتهى الوقت' : ''}`}
+              />
 
               <p className="mt-1 text-[0.7rem] text-[color:var(--app-muted)]">
                 {p.questionCount} سؤال · {p.secondsPerQuestion.toFixed(0)} ثانية للسؤال
@@ -76,6 +68,6 @@ export const TimeAnalysis = memo(function TimeAnalysis({
           );
         })}
       </div>
-    </section>
+    </Card>
   );
 });

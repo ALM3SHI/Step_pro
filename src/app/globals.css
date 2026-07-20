@@ -63,6 +63,16 @@
   --app-glass: rgba(255, 255, 255, 0.62);
   --app-glass-line: rgba(255, 255, 255, 0.7);
   --app-shadow: 0 8px 32px rgba(30, 43, 41, 0.1);
+
+  /* Categorical series for the four sections. See
+     components/results/palette.ts for the CVD/contrast validation notes.
+     Declared here rather than injected by the chart component, which was
+     scoping them to `.glass` and so leaked the series palette onto every
+     glass card in the product. */
+  --sec-reading: #2a78d6;
+  --sec-grammar: #1baf7a;
+  --sec-listening: #eda100;
+  --sec-writing: #4a3aa7;
 }
 
 /* Dark palette, declared once and applied from two triggers.
@@ -82,6 +92,11 @@
     --app-glass: rgba(22, 34, 31, 0.55);
     --app-glass-line: rgba(255, 255, 255, 0.08);
     --app-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+
+    --sec-reading: #3987e5;
+    --sec-grammar: #199e70;
+    --sec-listening: #c98500;
+    --sec-writing: #9085e9;
   }
 }
 
@@ -97,9 +112,16 @@
   --app-glass: rgba(22, 34, 31, 0.55);
   --app-glass-line: rgba(255, 255, 255, 0.08);
   --app-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+
+  --sec-reading: #3987e5;
+  --sec-grammar: #199e70;
+  --sec-listening: #c98500;
+  --sec-writing: #9085e9;
 }
 
 * { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
 
 body {
   margin: 0;
@@ -107,10 +129,73 @@ body {
   color: var(--app-ink);
   font-family: var(--font-arabic);
   line-height: 1.65;
+  /* Arabic reads noticeably better with these on; they are off by
+     default in most browsers. */
+  font-feature-settings: 'kern' 1, 'liga' 1;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
 }
 
+/* Numbers must not reflow as they tick — timers, scores, counters. */
+.tabular-nums { font-variant-numeric: tabular-nums; }
+
+::selection { background: color-mix(in srgb, var(--app-brand) 25%, transparent); }
+
+/* Focus is a legal accessibility requirement, not decoration. One
+   consistent ring everywhere rather than each component inventing one. */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--app-brand);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+/* ---------------------------------------------------------------------
+   Motion
+   Short, single-purpose, and entirely opt-in via class. Anything longer
+   than ~400ms reads as sluggish on a page the user visits repeatedly.
+   --------------------------------------------------------------------- */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(.97); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes shimmer {
+  from { background-position: 200% 0; }
+  to   { background-position: -200% 0; }
+}
+
+.animate-fade-up  { animation: fade-up .38s cubic-bezier(.2,.7,.3,1) both; }
+.animate-fade-in  { animation: fade-in .3s ease both; }
+.animate-scale-in { animation: scale-in .28s cubic-bezier(.2,.7,.3,1) both; }
+
+/* Stagger children without a wrapper per item. */
+.stagger > * { animation: fade-up .38s cubic-bezier(.2,.7,.3,1) both; }
+.stagger > *:nth-child(1) { animation-delay: .02s }
+.stagger > *:nth-child(2) { animation-delay: .06s }
+.stagger > *:nth-child(3) { animation-delay: .10s }
+.stagger > *:nth-child(4) { animation-delay: .14s }
+.stagger > *:nth-child(5) { animation-delay: .18s }
+.stagger > *:nth-child(6) { animation-delay: .22s }
+.stagger > *:nth-child(n+7) { animation-delay: .26s }
+
+/**
+ * Reduced motion.
+ *
+ * Animations are removed, not merely shortened — vestibular triggers do
+ * not scale down. Opacity fades are kept because they carry no motion.
+ */
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation: none !important; transition: none !important; }
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .stagger > * { animation-delay: 0s !important; }
 }
 
 /* ---------------------------------------------------------------------
@@ -374,11 +459,66 @@ body {
 .x-st-c { color: var(--color-x-good); font-weight: 600; }
 .x-st-i { color: var(--color-x-bad); font-weight: 600; }
 
-/* Part intro screen */
-.x-intro { direction: ltr; text-align: left; padding: 38px 34px; min-height: 320px; }
-.x-intro h1 { color: var(--color-x-brand); margin: 0 0 18px; font-size: 2rem; }
-.x-intro h3 { margin: 0 0 14px; color: var(--color-x-ink); font-size: 1.15rem; }
-.x-intro p { margin: 6px 0; color: #333f4b; font-size: 1.02rem; }
+/* ---------------------------------------------------------------------
+   Instruction screens — the briefing and the per-part intro.
+   These are the ONLY consumers of `.x-intro`; the question screen does
+   not use this class, so styling here cannot affect the pixel match.
+   The look stays institutional on purpose: this is still the simulator,
+   not the product UI.
+   --------------------------------------------------------------------- */
+.x-intro {
+  direction: ltr;
+  text-align: left;
+  padding: 42px 34px;
+  min-height: 320px;
+  /* Full-bleed prose on a 1920px screen is unreadable. Cap the measure
+     and centre the column rather than letting lines run edge to edge. */
+  max-width: 760px;
+  margin: 0 auto;
+  animation: fade-up .34s cubic-bezier(.2,.7,.3,1) both;
+}
+
+.x-intro h1 {
+  color: var(--color-x-brand);
+  margin: 0 0 14px;
+  font-size: 2rem;
+  line-height: 1.3;
+  /* A rule under the title separates "what this part is" from "what the
+     rules are" — previously both blocks read as one undifferentiated run. */
+  padding-bottom: 14px;
+  border-bottom: 2px solid var(--color-x-line-soft);
+}
+
+.x-intro h3 {
+  margin: 0 0 16px;
+  color: var(--color-x-ink);
+  font-size: 1.15rem;
+}
+
+.x-intro p { margin: 7px 0; color: #333f4b; font-size: 1.02rem; line-height: 1.75; }
+
+/* The stat lines ("عدد الأسئلة: 100") carry the number in a <b>. Making
+   it tabular and brand-coloured turns a paragraph into something the eye
+   can scan without reading. */
+.x-intro p > b { color: var(--color-x-brand); font-variant-numeric: tabular-nums; }
+
+/* The briefing's per-section breakdown. Rows, not a bare list — each
+   section is a discrete thing to compare against the others. */
+.x-intro ul { list-style: none; padding: 0; }
+.x-intro ul > li {
+  background: var(--color-x-panel);
+  border: 1px solid var(--color-x-line-soft);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 0.98rem;
+  line-height: 1.7;
+}
+
+@media (max-width: 640px) {
+  .x-intro { padding: 26px 20px; }
+  .x-intro h1 { font-size: 1.55rem; }
+  .x-intro h3 { font-size: 1.05rem; }
+}
 
 /* Analytical chart/graph stimulus */
 .x-figure { margin: 0 0 16px; }

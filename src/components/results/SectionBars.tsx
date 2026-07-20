@@ -1,7 +1,8 @@
 'use client';
 
 import { memo } from 'react';
-import { SECTION_COLOR_DARK, SECTION_COLOR_LIGHT, SECTION_LABEL_AR } from './palette';
+import { SECTION_LABEL_AR } from './palette';
+import { Card, Meter, SectionTitle } from '@/components/ui';
 import type { SectionScore } from '@/lib/exam/scoring';
 
 /**
@@ -23,11 +24,10 @@ export const SectionBars = memo(function SectionBars({ sections }: { sections: S
   const rows = [...sections].sort((a, b) => b.weightPct - a.weightPct);
 
   return (
-    <section className="glass rounded-2xl p-6" aria-labelledby="section-bars-title">
-      <h2 id="section-bars-title" className="mb-1 text-lg font-bold">الأداء حسب القسم</h2>
-      <p className="mb-5 text-sm text-[color:var(--app-muted)]">
-        النسبة داخل كل قسم، مرتّبة حسب وزن القسم في الاختبار.
-      </p>
+    <Card className="p-6" aria-labelledby="section-bars-title">
+      <SectionTitle id="section-bars-title" hint="النسبة داخل كل قسم، مرتّبة حسب وزن القسم في الاختبار.">
+        الأداء حسب القسم
+      </SectionTitle>
 
       <div className="space-y-4">
         {rows.map((r) => (
@@ -47,42 +47,14 @@ export const SectionBars = memo(function SectionBars({ sections }: { sections: S
               </span>
             </div>
 
-            <div
-              className="h-2.5 w-full overflow-hidden rounded-full bg-black/[0.07] dark:bg-white/[0.09]"
-              role="img"
-              aria-label={`${SECTION_LABEL_AR[r.section]}: ${r.accuracyPct.toFixed(0)} بالمئة، ${r.correct} من ${r.total}`}
-            >
-              <div
-                className="h-full rounded-full transition-[width] duration-700 ease-out"
-                style={{ width: `${Math.max(1.5, r.accuracyPct)}%`, background: `var(--sec-${r.section})` }}
-              />
-            </div>
+            <Meter
+              value={r.accuracyPct}
+              color={`var(--sec-${r.section})`}
+              label={`${SECTION_LABEL_AR[r.section]}: ${r.accuracyPct.toFixed(0)} بالمئة، ${r.correct} من ${r.total}`}
+            />
           </div>
         ))}
       </div>
-
-      <style>{`
-        .glass {
-          --sec-reading: ${SECTION_COLOR_LIGHT.reading};
-          --sec-grammar: ${SECTION_COLOR_LIGHT.grammar};
-          --sec-listening: ${SECTION_COLOR_LIGHT.listening};
-          --sec-writing: ${SECTION_COLOR_LIGHT.writing};
-        }
-        @media (prefers-color-scheme: dark) {
-          :root:not([data-theme="light"]) .glass {
-            --sec-reading: ${SECTION_COLOR_DARK.reading};
-            --sec-grammar: ${SECTION_COLOR_DARK.grammar};
-            --sec-listening: ${SECTION_COLOR_DARK.listening};
-            --sec-writing: ${SECTION_COLOR_DARK.writing};
-          }
-        }
-        :root[data-theme="dark"] .glass {
-          --sec-reading: ${SECTION_COLOR_DARK.reading};
-          --sec-grammar: ${SECTION_COLOR_DARK.grammar};
-          --sec-listening: ${SECTION_COLOR_DARK.listening};
-          --sec-writing: ${SECTION_COLOR_DARK.writing};
-        }
-      `}</style>
-    </section>
+    </Card>
   );
 });

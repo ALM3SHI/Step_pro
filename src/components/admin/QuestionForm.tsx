@@ -6,6 +6,7 @@ import {
   DIFFICULTIES, SECTION_LIST, SKILLS_BY_SECTION, type SectionId,
 } from '@/lib/content/taxonomy';
 import { issuesByField, validateDraft, type DraftQuestion } from '@/lib/content/validation';
+import { Alert, Button, inputClass } from '@/components/ui';
 import type { AudioClipRef, ContentStatus, PassageRef } from '@/lib/content/repository';
 
 const STATUS_LABELS: Record<ContentStatus, string> = {
@@ -99,11 +100,7 @@ export function QuestionForm({
 
   return (
     <div className="space-y-4">
-      {serverError && (
-        <p className="rounded-xl bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-300">
-          {serverError}
-        </p>
-      )}
+      {serverError && <Alert tone="bad">{serverError}</Alert>}
 
       {/* --- classification --- */}
       <div className={`grid gap-3 ${compact ? 'sm:grid-cols-2' : 'sm:grid-cols-4'}`}>
@@ -112,7 +109,7 @@ export function QuestionForm({
           <select
             value={value.section}
             onChange={(e) => setSection(e.target.value as SectionId)}
-            className="w-full rounded-lg border border-[color:var(--app-line)] bg-transparent px-3 py-2 text-sm"
+            className={inputClass()}
           >
             {SECTION_LIST.map((s) => (
               <option key={s.id} value={s.id}>{s.nameAr}</option>
@@ -127,11 +124,9 @@ export function QuestionForm({
           <select
             value={value.skillId}
             onChange={(e) => set('skillId', e.target.value)}
-            className={`w-full rounded-lg border bg-transparent px-3 py-2 text-sm ${
-              fieldIssues.skillId?.some((i) => i.severity === 'error')
-                ? 'border-red-500'
-                : 'border-[color:var(--app-line)]'
-            }`}
+            className={inputClass({
+              state: fieldIssues.skillId?.some((i) => i.severity === 'error') ? 'invalid' : undefined,
+            })}
           >
             <option value="">— اختر —</option>
             {skills.map((s) => (
@@ -146,7 +141,7 @@ export function QuestionForm({
           <select
             value={value.difficulty}
             onChange={(e) => set('difficulty', e.target.value)}
-            className="w-full rounded-lg border border-[color:var(--app-line)] bg-transparent px-3 py-2 text-sm"
+            className={inputClass()}
           >
             {DIFFICULTIES.map((d) => (
               <option key={d} value={d}>{DIFFICULTY_LABELS[d]}</option>
@@ -159,7 +154,7 @@ export function QuestionForm({
           <select
             value={value.status}
             onChange={(e) => set('status', e.target.value)}
-            className="w-full rounded-lg border border-[color:var(--app-line)] bg-transparent px-3 py-2 text-sm"
+            className={inputClass()}
           >
             {(Object.keys(STATUS_LABELS) as ContentStatus[]).map((s) => (
               <option key={s} value={s}>{STATUS_LABELS[s]}</option>
@@ -176,7 +171,7 @@ export function QuestionForm({
           <select
             value={value.passageId ?? ''}
             onChange={(e) => set('passageId', e.target.value || null)}
-            className="w-full rounded-lg border border-[color:var(--app-line)] bg-transparent px-3 py-2 text-sm"
+            className={inputClass()}
           >
             <option value="">— بلا قطعة —</option>
             {passages.map((p) => (
@@ -197,11 +192,9 @@ export function QuestionForm({
           <select
             value={value.audioClipId ?? ''}
             onChange={(e) => set('audioClipId', e.target.value || null)}
-            className={`w-full rounded-lg border bg-transparent px-3 py-2 text-sm ${
-              fieldIssues.audioClipId?.some((i) => i.severity === 'error')
-                ? 'border-red-500'
-                : 'border-[color:var(--app-line)]'
-            }`}
+            className={inputClass({
+              state: fieldIssues.audioClipId?.some((i) => i.severity === 'error') ? 'invalid' : undefined,
+            })}
           >
             <option value="">— اختر تسجيلًا —</option>
             {audioClips.map((c) => (
@@ -231,11 +224,10 @@ export function QuestionForm({
           rows={compact ? 3 : 5}
           dir="ltr"
           spellCheck={false}
-          className={`w-full whitespace-pre-wrap rounded-lg border bg-transparent p-3 text-left font-serif text-sm ${
-            fieldIssues.text?.some((i) => i.severity === 'error')
-              ? 'border-red-500'
-              : 'border-[color:var(--app-line)]'
-          }`}
+          className={inputClass({
+            state: fieldIssues.text?.some((i) => i.severity === 'error') ? 'invalid' : undefined,
+            className: 'whitespace-pre-wrap text-left font-serif',
+          })}
         />
         <Err field="text" />
       </label>
@@ -285,9 +277,10 @@ export function QuestionForm({
                   }}
                   dir="ltr"
                   placeholder={`الخيار ${k}`}
-                  className={`flex-1 rounded-lg border bg-transparent px-3 py-2 text-left font-serif text-sm ${
-                    isCorrect ? 'border-emerald-500 bg-emerald-500/5' : 'border-[color:var(--app-line)]'
-                  }`}
+                  className={inputClass({
+                    state: isCorrect ? 'valid' : undefined,
+                    className: 'flex-1 text-left font-serif',
+                  })}
                 />
               </div>
             );
@@ -310,7 +303,7 @@ export function QuestionForm({
           onChange={(e) => set('explanationAr', e.target.value)}
           rows={compact ? 2 : 4}
           dir="rtl"
-          className="w-full whitespace-pre-wrap rounded-lg border border-[color:var(--app-line)] bg-transparent p-3 text-sm"
+          className={inputClass({ className: 'whitespace-pre-wrap' })}
         />
         <Err field="explanationAr" />
       </label>
@@ -344,15 +337,9 @@ export function QuestionForm({
               if (e.key === 'Enter') { e.preventDefault(); addTag(); }
             }}
             placeholder="أضف وسمًا ثم Enter"
-            className="flex-1 rounded-lg border border-[color:var(--app-line)] bg-transparent px-3 py-2 text-sm"
+            className={inputClass({ className: 'flex-1' })}
           />
-          <button
-            type="button"
-            onClick={addTag}
-            className="rounded-lg border border-[color:var(--app-line)] px-4 text-sm font-semibold"
-          >
-            إضافة
-          </button>
+          <Button size="sm" onClick={addTag}>إضافة</Button>
         </div>
       </div>
 

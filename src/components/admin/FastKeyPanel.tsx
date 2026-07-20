@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { bindFastKeys, buildExternalPrompt, parseFastKeys, type BindableQuestion, type OptionKey } from '@/lib/ingestion/fastkey';
+import { Alert, Button, Card } from '@/components/ui';
 
 export interface FastKeyPanelProps<T extends BindableQuestion> {
   questions: T[];
@@ -42,7 +43,7 @@ export function FastKeyPanel<T extends BindableQuestion>({ questions, onApply }:
   const canApply = Boolean(outcome && outcome.stats.applied > 0 && !blocked);
 
   return (
-    <section className="glass space-y-4 rounded-2xl p-5">
+    <Card className="space-y-4 p-5">
       <div>
         <h3 className="text-base font-bold">مفاتيح الإجابات السريعة</h3>
         <p className="text-sm text-[color:var(--app-muted)]">
@@ -52,13 +53,9 @@ export function FastKeyPanel<T extends BindableQuestion>({ questions, onApply }:
 
       {/* Step 1 — copy a prompt that guarantees a parseable reply. */}
       <div className="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          onClick={copyPrompt}
-          className="rounded-xl border border-[color:var(--app-line)] px-4 py-2 text-sm font-semibold"
-        >
+        <Button onClick={copyPrompt}>
           {copied ? '✓ تم النسخ' : `نسخ الأسئلة (${questions.length}) للذكاء الاصطناعي`}
-        </button>
+        </Button>
         <span className="text-xs text-[color:var(--app-muted)]">
           يتضمّن الترقيم نفسه المستخدم في الربط
         </span>
@@ -153,8 +150,11 @@ export function FastKeyPanel<T extends BindableQuestion>({ questions, onApply }:
             </Issue>
           )}
 
-          <button
-            type="button"
+          <Button
+            variant="primary"
+            size="lg"
+            block
+            className="bg-emerald-600"
             disabled={!canApply}
             onClick={() =>
               onApply(
@@ -165,15 +165,14 @@ export function FastKeyPanel<T extends BindableQuestion>({ questions, onApply }:
                 })),
               )
             }
-            className="w-full rounded-xl bg-emerald-600 py-3 font-bold text-white disabled:opacity-40"
           >
             {blocked
               ? 'أكّد التحذير أعلاه أولًا'
               : `تطبيق ${outcome.stats.applied} إجابة على البطاقات`}
-          </button>
+          </Button>
         </div>
       )}
-    </section>
+    </Card>
   );
 }
 
@@ -186,13 +185,10 @@ function Issue({
   title: string;
   children: React.ReactNode;
 }) {
-  const cls = tone === 'amber'
-    ? 'bg-amber-500/10 text-amber-900 dark:text-amber-200'
-    : 'bg-black/[0.04] text-[color:var(--app-muted)] dark:bg-white/[0.05]';
   return (
-    <div className={`rounded-xl px-4 py-3 text-sm ${cls}`}>
+    <Alert tone={tone === 'amber' ? 'warn' : 'info'}>
       <b className="mb-1 block">{title}</b>
       <ul className="space-y-0.5">{children}</ul>
-    </div>
+    </Alert>
   );
 }

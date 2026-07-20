@@ -2,6 +2,7 @@
 
 import { memo, useMemo, useState } from 'react';
 import { SECTION_LABEL_AR } from './palette';
+import { Alert, Card, EmptyState, Pill, SectionTitle } from '@/components/ui';
 import type { ReviewRow } from '@/lib/exam/scoring';
 
 type Filter = 'all' | 'wrong' | 'skipped' | 'flagged';
@@ -50,36 +51,28 @@ export const QuestionReview = memo(function QuestionReview({
   ];
 
   return (
-    <section className="glass rounded-2xl p-6" aria-labelledby="review-title">
-      <h2 id="review-title" className="mb-1 text-lg font-bold">مراجعة الأسئلة</h2>
-      <p className="mb-4 text-sm text-[color:var(--app-muted)]">
-        اضغط على أي سؤال لعرض الشرح بالعربية.
-      </p>
+    <Card className="p-6" aria-labelledby="review-title">
+      <SectionTitle id="review-title" hint="اضغط على أي سؤال لعرض الشرح بالعربية.">
+        مراجعة الأسئلة
+      </SectionTitle>
 
       <div className="mb-5 flex flex-wrap gap-2">
         {TABS.map(([key, label]) => (
-          <button
+          <Pill
             key={key}
-            type="button"
+            active={filter === key}
             onClick={() => setFilter(key)}
             disabled={counts[key] === 0}
-            className={`rounded-full px-4 py-1.5 text-sm font-semibold transition-colors disabled:opacity-40 ${
-              filter === key
-                ? 'bg-[color:var(--app-brand)] text-white'
-                : 'border border-[color:var(--app-line)]'
-            }`}
           >
-            {label} ({counts[key]})
-          </button>
+            {label} <span className="tabular-nums opacity-70">({counts[key]})</span>
+          </Pill>
         ))}
       </div>
 
       {visible.length === 0 ? (
-        <p className="rounded-xl bg-emerald-500/10 px-4 py-6 text-center text-emerald-700 dark:text-emerald-300">
-          لا توجد أسئلة في هذا التصنيف 🎉
-        </p>
+        <EmptyState icon="🎉" title="لا توجد أسئلة في هذا التصنيف" />
       ) : (
-        <ul className="space-y-3">
+        <ul className="stagger space-y-3">
           {visible.map((r) => (
             <ReviewItem
               key={r.id}
@@ -91,7 +84,7 @@ export const QuestionReview = memo(function QuestionReview({
           ))}
         </ul>
       )}
-    </section>
+    </Card>
   );
 });
 
@@ -120,7 +113,7 @@ function ReviewItem({
         type="button"
         onClick={onToggle}
         aria-expanded={expanded}
-        className="flex w-full items-start gap-3 p-4 text-right"
+        className="flex w-full items-start gap-3 rounded-xl p-4 text-right transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.04]"
       >
         <span className="mt-0.5 flex-shrink-0 text-sm">
           {row.isCorrect ? '✅' : row.answered ? '❌' : '⭕'}
@@ -140,13 +133,19 @@ function ReviewItem({
             {row.questionText}
           </span>
         </span>
-        <span className="mt-0.5 flex-shrink-0 text-xs text-[color:var(--app-muted)]">
-          {expanded ? '▲' : '▼'}
+        {/* One glyph that rotates, rather than swapping ▲/▼ — the
+            direction of travel is the whole signal, and a swap loses it. */}
+        <span
+          aria-hidden
+          className="mt-0.5 flex-shrink-0 text-xs text-[color:var(--app-muted)] transition-transform duration-200"
+          style={{ transform: expanded ? 'rotate(180deg)' : undefined }}
+        >
+          ▼
         </span>
       </button>
 
       {expanded && (
-        <div className="border-t border-[color:var(--app-line)] px-4 pb-4 pt-3">
+        <div className="animate-fade-in border-t border-[color:var(--app-line)] px-4 pb-4 pt-3">
           {row.imageUrl && (
             <figure className="mb-3">
               <img src={row.imageUrl} alt={row.imageAlt ?? ''} className="max-w-full rounded-lg border border-[color:var(--app-line)] bg-white" />
@@ -191,9 +190,11 @@ function ReviewItem({
           </ul>
 
           {row.explanationAr ? (
-            <div dir="rtl" className="rounded-xl bg-[color:var(--app-brand)]/10 px-4 py-3 text-[0.95rem] leading-[1.9]">
-              <b className="mb-1 block text-sm text-[color:var(--app-brand)]">الشرح</b>
-              {row.explanationAr}
+            <div dir="rtl">
+              <Alert tone="brand">
+                <b className="mb-1 block text-[color:var(--app-brand)]">الشرح</b>
+                {row.explanationAr}
+              </Alert>
             </div>
           ) : (
             <p className="text-xs text-[color:var(--app-muted)]">لا يوجد شرح متاح لهذا السؤال بعد.</p>

@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { activeContentSource } from '@/lib/content/activeProvider';
+import { Badge, linkClass } from '@/components/ui';
 
 const TABS = [
   { href: '/admin', label: 'التجميعات' },
@@ -36,11 +37,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
           <nav className="flex gap-2">
             {TABS.map((t) => (
-              <Link
-                key={t.href}
-                href={t.href}
-                className="rounded-full border border-[color:var(--app-line)] px-4 py-1.5 text-sm font-semibold transition-colors hover:bg-black/5 dark:hover:bg-white/10"
-              >
+              <Link key={t.href} href={t.href} className={linkClass({ size: 'sm' })}>
                 {t.label}
               </Link>
             ))}
@@ -48,16 +45,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
           <span className="flex-1" />
 
-          <span
-            className={`rounded-full px-3 py-1 text-xs font-bold ${
-              source === 'supabase'
-                ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
-                : 'bg-amber-500/15 text-amber-700 dark:text-amber-300'
-            }`}
-            title="مصدر المحتوى الحالي"
-          >
+          <Badge tone={source === 'supabase' ? 'good' : 'warn'}>
             {source === 'supabase' ? '● Supabase' : '● حزمة محلية'}
-          </span>
+          </Badge>
         </div>
       </header>
 

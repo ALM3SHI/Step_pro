@@ -2,6 +2,7 @@
 
 import { memo, useState } from 'react';
 import { SECTION_LABEL_AR, STATUS } from './palette';
+import { Badge, Button, Card, Delta, EmptyState, Meter, SectionTitle } from '@/components/ui';
 import type { SkillTrend } from '@/app/actions/analytics';
 
 const MASTERY_LABEL: Record<SkillTrend['mastery'], string> = {
@@ -38,12 +39,10 @@ export const SkillTrendTable = memo(function SkillTrendTable({
 
   if (!skills.length) {
     return (
-      <section className="glass rounded-2xl p-6">
-        <h2 className="mb-2 text-lg font-bold">تحليل المهارات</h2>
-        <p className="text-sm text-[color:var(--app-muted)]">
-          لم تُسجَّل نتائج مهارات بعد.
-        </p>
-      </section>
+      <Card className="p-6">
+        <SectionTitle>تحليل المهارات</SectionTitle>
+        <EmptyState icon="🧭" title="لم تُسجَّل نتائج مهارات بعد" />
+      </Card>
     );
   }
 
@@ -52,16 +51,13 @@ export const SkillTrendTable = memo(function SkillTrendTable({
   const visible = showAll ? skills : reliable.slice(0, 10);
 
   return (
-    <section className="glass rounded-2xl p-6" aria-labelledby="skills-title">
-      <div className="mb-1 flex flex-wrap items-baseline gap-2">
-        <h2 id="skills-title" className="text-lg font-bold">تحليل المهارات</h2>
-        <span className="text-xs text-[color:var(--app-muted)]">
-          {reliable.length} مهارة بعينة كافية من أصل 27
-        </span>
-      </div>
-      <p className="mb-5 text-sm text-[color:var(--app-muted)]">
-        مرتّبة من الأضعف. المهارات ذات المحاولات القليلة معروضة دون حكم.
-      </p>
+    <Card className="p-6" aria-labelledby="skills-title">
+      <SectionTitle
+        id="skills-title"
+        hint={`مرتّبة من الأضعف. المهارات ذات المحاولات القليلة معروضة دون حكم. ${reliable.length} مهارة بعينة كافية من أصل 27.`}
+      >
+        تحليل المهارات
+      </SectionTitle>
 
       <ul className="space-y-3">
         {visible.map((s) => {
@@ -76,26 +72,11 @@ export const SkillTrendTable = memo(function SkillTrendTable({
                   {SECTION_LABEL_AR[s.section] ?? s.section}
                 </span>
 
-                {!isThin && (
-                  <span
-                    className="rounded-full px-2 py-0.5 text-[0.65rem] font-bold"
-                    style={{ background: `${tone}22`, color: tone }}
-                  >
-                    {MASTERY_LABEL[s.mastery]}
-                  </span>
-                )}
+                {!isThin && <Badge color={tone}>{MASTERY_LABEL[s.mastery]}</Badge>}
 
                 {/* Direction only when there is a second sitting to compare. */}
                 {hasTrend && s.deltaPct !== null && Math.abs(s.deltaPct) >= 10 && (
-                  <span
-                    className={`text-xs font-bold tabular-nums ${
-                      s.deltaPct > 0
-                        ? 'text-emerald-700 dark:text-emerald-300'
-                        : 'text-red-700 dark:text-red-300'
-                    }`}
-                  >
-                    {s.deltaPct > 0 ? '▲' : '▼'} {Math.abs(s.deltaPct)}%
-                  </span>
+                  <Delta value={s.deltaPct} suffix="%" />
                 )}
 
                 <span className="flex-1" />
@@ -113,30 +94,21 @@ export const SkillTrendTable = memo(function SkillTrendTable({
                 )}
               </div>
 
-              <div
-                className="h-2 w-full overflow-hidden rounded-full bg-black/[0.07] dark:bg-white/[0.09]"
-                role="img"
-                aria-label={`${s.nameAr}: ${s.accuracyPct.toFixed(0)} بالمئة، ${s.correct} من ${s.attempted}`}
-              >
-                <div
-                  className="h-full rounded-full transition-[width] duration-700 ease-out"
-                  style={{ width: `${Math.max(1.5, s.accuracyPct)}%`, background: tone }}
-                />
-              </div>
+              <Meter
+                value={s.accuracyPct}
+                color={tone}
+                label={`${s.nameAr}: ${s.accuracyPct.toFixed(0)} بالمئة، ${s.correct} من ${s.attempted}`}
+              />
             </li>
           );
         })}
       </ul>
 
       {!showAll && (reliable.length > 10 || thin.length > 0) && (
-        <button
-          type="button"
-          onClick={() => setShowAll(true)}
-          className="mt-4 w-full rounded-xl border border-[color:var(--app-line)] py-2 text-sm font-semibold"
-        >
+        <Button block className="mt-4" onClick={() => setShowAll(true)}>
           عرض كل المهارات ({skills.length})
-        </button>
+        </Button>
       )}
-    </section>
+    </Card>
   );
 });
