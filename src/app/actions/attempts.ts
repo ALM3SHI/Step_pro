@@ -2,6 +2,7 @@
 
 import { createServiceClient } from '@/lib/supabase/server';
 import { getContentProvider } from '@/lib/content/activeProvider';
+import { getDeviceId } from '@/lib/auth/device';
 import { SECTION_DEFS, type SectionId } from '@/lib/content/taxonomy';
 import type { OptionKey } from '@/lib/content/schema';
 
@@ -77,10 +78,13 @@ export async function openAttempt(input: {
 
   try {
     const db = createServiceClient();
+    // The owner is the device cookie, never a client-supplied value: the
+    // browser must not be able to assert whose attempt this is.
+    const deviceId = await getDeviceId();
     const { data, error } = await db
       .from('exam_attempts')
       .insert({
-        user_id: input.userId ?? null,
+        user_id: deviceId ?? input.userId ?? null,
         status: 'in_progress',
         // The full skeleton, minus question content. A few KB of JSON,
         // and the only thing that makes a resumed sitting the SAME paper.
@@ -299,19 +303,26 @@ export interface ResumableSummary {
   totalParts: number;
 }
 
-/** Most recent unfinished attempt, for the resume prompt. */
-export async function findResumableAttempt(
-  userId?: string,
-): Promise<{ ok: boolean; attempt?: ResumableSummary | null; error?: string }> {
+/** Most recent unfinished attempt for THIS device, for the resume prompt. */
+export async function findResumableAttempt(): Promise<{
+  ok: boolean;
+  attempt?: ResumableSummary | null;
+  error?: string;
+}> {
   try {
+    // Scope to the device. Without this every visitor is offered whatever
+    // unfinished attempt happens to be newest across all users.
+    const deviceId = await getDeviceId();
+    if (!deviceId) return { ok: true, attempt: null };
+
     const db = createServiceClient();
-    let q = db
+    const q = db
       .from('exam_attempts')
       .select('id, blueprint, answers, current_part, total_questions, started_at')
       .eq('status', 'in_progress')
+      .eq('user_id', deviceId)
       .order('started_at', { ascending: false })
       .limit(1);
-    if (userId) q = q.eq('user_id', userId);
 
     const { data, error } = await q;
     if (error) return { ok: false, error: error.message };
@@ -373,13 +384,17 @@ export async function resumeAttempt(attemptId: string): Promise<{
   error?: string;
 }> {
   try {
+    // A device may only resume its own attempt — the id alone must not
+    // grant access to another visitor's sitting.
+    const deviceId = await getDeviceId();
     const db = createServiceClient();
-    const { data, error } = await db
+    let q = db
       .from('exam_attempts')
       .select('*')
       .eq('id', attemptId)
-      .eq('status', 'in_progress')
-      .maybeSingle();
+      .eq('status', 'in_progress');
+    if (deviceId) q = q.eq('user_id', deviceId);
+    const { data, error } = await q.maybeSingle();
 
     if (error) return { ok: false, error: error.message };
     if (!data) return { ok: false, error: 'لم تُعثر على محاولة قابلة للاستئناف' };
@@ -415,12 +430,16 @@ export async function resumeAttempt(attemptId: string): Promise<{
 /** Abandon an attempt so it stops being offered for resume. */
 export async function abandonAttempt(attemptId: string): Promise<{ ok: boolean; error?: string }> {
   try {
+    const deviceId = await getDeviceId();
     const db = createServiceClient();
-    const { error } = await db
+    let q = db
       .from('exam_attempts')
       .update({ status: 'abandoned' })
       .eq('id', attemptId)
       .eq('status', 'in_progress');
+    // Only the owner can abandon it.
+    if (deviceId) q = q.eq('user_id', deviceId);
+    const { error } = await q;
     if (error) return { ok: false, error: error.message };
     return { ok: true };
   } catch (err) {

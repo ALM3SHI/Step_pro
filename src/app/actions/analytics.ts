@@ -1,6 +1,7 @@
 'use server';
 
 import { createServiceClient, isSupabaseConfigured } from '@/lib/supabase/server';
+import { getDeviceId } from '@/lib/auth/device';
 import { SECTION_DEFS, SKILL_BY_ID, type SectionId } from '@/lib/content/taxonomy';
 import { accuracyToStepScore } from '@/lib/exam/scoring';
 
@@ -58,16 +59,24 @@ export async function getProgressOverview(userId?: string): Promise<{
     return { ok: false, error: 'Supabase غير مضبوط' };
   }
 
+  // Scope to this device. An explicit userId (a future account) wins;
+  // otherwise the anonymous device cookie decides whose progress this is.
+  // Without a scope, the dashboard would aggregate every visitor at once.
+  const scopeId = userId ?? (await getDeviceId());
+  if (!scopeId) {
+    return { ok: true, data: { attempts: [], skills: [], hasTrend: false } };
+  }
+
   try {
     const db = createServiceClient();
 
     // --- attempts -------------------------------------------------------
-    let attemptQuery = db
+    const attemptQuery = db
       .from('exam_attempts')
       .select('id, blueprint, submitted_at, started_at, total_questions, correct_count, weighted_score')
       .eq('status', 'submitted')
+      .eq('user_id', scopeId)
       .order('submitted_at', { ascending: true });
-    if (userId) attemptQuery = attemptQuery.eq('user_id', userId);
 
     const { data: attemptRows, error: aErr } = await attemptQuery;
     if (aErr) return { ok: false, error: aErr.message };
