@@ -1,21 +1,20 @@
 'use server';
 
 import { createServiceClient } from '@/lib/supabase/server';
-import { loadBundleSnapshot } from '@/lib/content/bundleProvider';
+import { getContentProvider } from '@/lib/content/activeProvider';
 import { SECTION_DEFS, type SectionId } from '@/lib/content/taxonomy';
 import type { OptionKey } from '@/lib/content/schema';
 
 /**
  * Attempt persistence for the rebuilt engine.
  *
- * Scoring happens on the SERVER against the content bundle, not in SQL
- * against the `questions` table. That table is empty until the seed runs,
- * so the SQL path would silently grade every attempt 0/0. Grading from
- * the bundle keeps the anti-tamper property that matters — the browser
- * never supplies the score — while working today.
- *
- * When the seed lands, `scoreAgainstBundle` can be swapped for the SQL
- * function without touching the client.
+ * Scoring happens on the SERVER against the ACTIVE content provider — the
+ * same source the exam was built from — not in SQL and not always the
+ * bundle. It must be the active source: once Supabase is authoritative,
+ * questions carry database UUIDs, and grading those against the bundle
+ * (whose ids are `legacy-*`) matches nothing and persists 0/0. The server
+ * still reads the answer key, so the anti-tamper property holds: the
+ * browser never supplies the score.
  */
 
 export interface AttemptSnapshot {
@@ -180,7 +179,7 @@ export async function submitAttempt(
   outcomes?: OutcomeRow[],
 ): Promise<SubmitResult> {
   try {
-    const graded = scoreAgainstBundle(answers, questionIds);
+    const graded = await scoreAttempt(answers, questionIds);
     const db = createServiceClient();
 
     if (outcomes?.length) {
@@ -233,8 +232,11 @@ export async function submitAttempt(
   }
 }
 
-function scoreAgainstBundle(answers: Record<string, OptionKey>, questionIds: string[]) {
-  const snapshot = loadBundleSnapshot();
+async function scoreAttempt(answers: Record<string, OptionKey>, questionIds: string[]) {
+  // The active provider — Supabase in production — is the source the exam
+  // was built from, so its ids match the answer keys. Grading against the
+  // bundle instead is what zeroed every score once Supabase went live.
+  const snapshot = await getContentProvider().load();
   const byId = new Map(snapshot.questions.map((q) => [q.id, q]));
 
   const bySection = new Map<SectionId, { correct: number; total: number }>();

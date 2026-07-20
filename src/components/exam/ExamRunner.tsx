@@ -179,17 +179,31 @@ export function ExamRunner({
   const back = useCallback(() => dispatch({ type: 'BACK', now: Date.now() }), []);
   const nextPart = useCallback(() => dispatch({ type: 'NEXT_PART', now: Date.now() }), []);
   const expire = useCallback(() => dispatch({ type: 'TIME_EXPIRED', now: Date.now() }), []);
+  // Just the transition. Submission is driven by the phase reaching
+  // `finished` (see the effect below), so EVERY path that ends the exam —
+  // the finish button, quitting early, and a last-part timer expiry that
+  // never calls finish() — grades and persists exactly once. Wiring the
+  // submit into finish() alone silently dropped the expiry case.
   const finish = useCallback(() => {
     dispatch({ type: 'FINISH', now: Date.now() });
+  }, []);
 
-    // Show the results immediately and grade in the background — making
-    // the candidate wait on a round trip is the one moment of lag they
-    // actually notice.
-    if (!attemptId) return;
+  // Grade and persist on entry to `finished`, once. Guarded by a ref
+  // rather than phase-diffing so a re-render cannot double-submit; keyed
+  // on attemptId too, so a sitting that finished before its row finished
+  // opening still submits the moment the id arrives.
+  const flushRef = useRef(sync.flushNow);
+  flushRef.current = sync.flushNow;
+  const submittedRef = useRef(false);
+  useEffect(() => {
+    if (state.phase !== 'finished' || !attemptId || submittedRef.current) return;
+    submittedRef.current = true;
+
+    // Results are already on screen; grading is a background round trip.
     void (async () => {
       // Flush first so the graded row reflects the final answer, not the
       // one before the debounce window closed.
-      await sync.flushNow();
+      await flushRef.current();
       await submitAttempt(
         attemptId,
         stateRef.current.answers,
@@ -198,7 +212,7 @@ export function ExamRunner({
         buildOutcomes(stateRef.current),
       );
     })();
-  }, [attemptId, sync]);
+  }, [state.phase, attemptId]);
 
   /** End the exam early, matching the legacy quit control. */
   const quitEarly = useCallback(() => {
