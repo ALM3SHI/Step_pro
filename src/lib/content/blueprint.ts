@@ -7,7 +7,7 @@
  * is a config change rather than an engine change.
  */
 
-import { SECTION_DEFS, SECTION_LIST, type SectionId } from './taxonomy';
+import { SECTION_DEFS, SECTION_LIST, SKILLS_BY_SECTION, type Difficulty, type SectionId } from './taxonomy';
 
 export interface PartSpec {
   section: SectionId;
@@ -15,6 +15,13 @@ export interface PartSpec {
   partNo: number;
   questionCount: number
   durationSeconds: number;
+  /**
+   * Targeted-practice narrowing. Absent on the real exam, which must
+   * sample the whole section — a STEP paper that drew only from one
+   * skill would not be a STEP paper.
+   */
+  skillIds?: string[];
+  difficulties?: Difficulty[];
 }
 
 export interface Blueprint {
@@ -115,6 +122,73 @@ export function practiceBlueprint(section: SectionId, questionCount = 10): Bluep
     parts: [{ section, partNo: 1, questionCount, durationSeconds: seconds }],
     instantFeedback: true,
   };
+}
+
+// ---------------------------------------------------------------------
+// Targeted practice
+// ---------------------------------------------------------------------
+
+/**
+ * Effectively no clock.
+ *
+ * Targeted practice is for working through a weakness, not for pacing,
+ * so the timer must never end the session. This is a DATA value rather
+ * than a second timing path in the engine: the runner keeps one code
+ * path, and 12 hours is longer than any real sitting.
+ */
+export const UNTIMED_SECONDS = 12 * 60 * 60;
+
+export interface TargetedPracticeSpec {
+  /** One entry per section to draw from. Mixed practice passes several. */
+  sections: Array<{
+    section: SectionId;
+    questionCount: number;
+    /** Empty means the whole section. */
+    skillIds?: string[];
+  }>;
+  difficulties?: Difficulty[];
+  nameAr?: string;
+}
+
+/**
+ * A drill narrowed to chosen skills and/or a difficulty band.
+ *
+ * One part per section and no split: the parts array exists because the
+ * engine reads it, but a single part per section means the candidate
+ * never hits a part boundary or a lock.
+ */
+export function targetedPracticeBlueprint(spec: TargetedPracticeSpec): Blueprint {
+  const entries = spec.sections.filter((s) => s.questionCount > 0);
+  const totalQuestions = entries.reduce((n, s) => n + s.questionCount, 0);
+
+  const parts: PartSpec[] = entries.map((s) => ({
+    section: s.section,
+    partNo: 1,
+    questionCount: s.questionCount,
+    durationSeconds: UNTIMED_SECONDS,
+    skillIds: s.skillIds?.length ? s.skillIds : undefined,
+    difficulties: spec.difficulties?.length ? spec.difficulties : undefined,
+  }));
+
+  const label = spec.nameAr
+    ?? (entries.length === 1
+      ? `تدريب: ${SECTION_DEFS[entries[0].section].nameAr}`
+      : 'تدريب مختلط');
+
+  return {
+    id: `targeted-${entries.map((s) => s.section).join('-')}-${totalQuestions}`,
+    nameAr: label,
+    nameEn: 'Targeted Practice',
+    totalQuestions,
+    totalSeconds: UNTIMED_SECONDS * parts.length,
+    parts,
+    instantFeedback: true,
+  };
+}
+
+/** Skills that actually have questions behind them, for the picker. */
+export function skillsForSection(section: SectionId) {
+  return SKILLS_BY_SECTION[section] ?? [];
 }
 
 // ---------------------------------------------------------------------

@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useState, useTransition } from 'react';
 import { ExamRunner, type ResumeState } from '@/components/exam/ExamRunner';
 import { rehydrateExam, startFullExam, startPractice } from '@/app/actions/exam';
@@ -7,9 +8,17 @@ import {
   abandonAttempt, findResumableAttempt, resumeAttempt, type ResumableSummary,
 } from '@/app/actions/attempts';
 import { SECTION_LIST, type SectionId } from '@/lib/content/taxonomy';
+import { Alert, Badge, Button, Card, Pill, Stat, linkClass } from '@/components/ui';
 import type { BuiltExam } from '@/lib/exam/buildExam';
 
 const PRACTICE_SIZES = [5, 10, 20];
+
+const SECTION_ICON: Record<string, string> = {
+  reading: '📖',
+  grammar: '✏️',
+  listening: '🎧',
+  writing: '📝',
+};
 
 /**
  * Entry point for both modes, plus resume.
@@ -37,7 +46,6 @@ export function ExamLauncher({
   const [resumable, setResumable] = useState<ResumableSummary | null>(null);
   const [checkedResume, setCheckedResume] = useState(!persist);
 
-  // Look for an unfinished sitting on load.
   useEffect(() => {
     if (!persist) return;
     let cancelled = false;
@@ -61,7 +69,7 @@ export function ExamLauncher({
         // discover mid-exam that Reading was 30 questions, not 40.
         setWarnings(
           res.shortfalls.map(
-            (s) => `${SECTION_LIST.find((x) => x.id === s.section)?.nameAr ?? s.section}: ${s.got} سؤالًا متاحًا من ${s.wanted} مطلوبة`,
+            (s) => `${SECTION_LIST.find((x) => x.id === s.section)?.nameAr ?? s.section}: ${s.got} سؤالًا متاحًا من ${s.wanted}`,
           ),
         );
       }
@@ -76,15 +84,11 @@ export function ExamLauncher({
       const saved = await resumeAttempt(attemptId);
       if (!saved.ok || !saved.payload) { setError(saved.error ?? 'تعذّر الاستئناف'); return; }
 
-      // Content is re-fetched by id from the stored skeleton, so the
-      // paper is the same one — not a fresh draw from the live pool.
       const rebuilt = await rehydrateExam(saved.payload.skeleton);
       if (!rebuilt.ok || !rebuilt.exam) { setError(rebuilt.error ?? 'تعذّر إعادة بناء الاختبار'); return; }
 
       if (rebuilt.missing?.length) {
-        setWarnings([
-          `${rebuilt.missing.length} سؤالًا من هذا الاختبار لم يعد متاحًا وحُذف منه.`,
-        ]);
+        setWarnings([`${rebuilt.missing.length} سؤالًا لم يعد متاحًا وحُذف من الاختبار.`]);
       }
 
       setResume({
@@ -126,95 +130,121 @@ export function ExamLauncher({
     );
   }
 
+  const practiceAvailable = pool[practiceSection] ?? 0;
+
   return (
-    <div className="mx-auto max-w-3xl space-y-5 px-6 py-12">
-      <header>
-        <h1 className="text-2xl font-bold text-[color:var(--app-brand)]">محاكي STEP</h1>
-        <p className="text-sm text-[color:var(--app-muted)]">
-          اختبار كامل مطابق لتوزيع قياس، أو تدريب على قسم واحد.
-        </p>
+    <div className="mx-auto max-w-3xl space-y-5 px-6 py-10 sm:py-14">
+      <header className="animate-fade-up flex flex-wrap items-end gap-3">
+        <div className="min-w-0 flex-1">
+          <h1 className="text-2xl font-bold tracking-tight text-[color:var(--app-brand)] sm:text-3xl">
+            محاكي STEP
+          </h1>
+          <p className="mt-1 text-sm text-[color:var(--app-muted)]">
+            اختبار كامل بتوزيع قياس، أو تدريب على قسم واحد.
+          </p>
+        </div>
+        <Link
+          href="/"
+          className={linkClass({ variant: 'ghost', size: 'sm', className: 'text-[color:var(--app-muted)]' })}
+        >
+          الرئيسية
+        </Link>
       </header>
 
-      {error && (
-        <p className="rounded-xl bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-300">{error}</p>
-      )}
+      {error && <Alert tone="bad">{error}</Alert>}
 
       {/* ---------- resume ---------- */}
       {resumable && (
-        <section className="glass rounded-2xl border-r-4 border-r-amber-500 p-6">
-          <h2 className="text-lg font-bold">لديك اختبار غير مكتمل</h2>
-          <p className="mt-1 text-sm text-[color:var(--app-muted)]">
-            {resumable.nameAr} · بدأته{' '}
-            {new Date(resumable.startedAt).toLocaleDateString('ar-SA', {
-              month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit',
-            })}
-          </p>
-          <p className="mt-1 text-sm">
-            أجبت <b className="tabular-nums">{resumable.answered}</b> من{' '}
-            <b className="tabular-nums">{resumable.totalQuestions}</b> · وصلت للجزء{' '}
-            <b className="tabular-nums">{resumable.partIndex + 1}</b> من {resumable.totalParts}
-          </p>
+        <Card accent="warn" className="animate-scale-in p-6">
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <h2 className="text-lg font-bold">لديك اختبار غير مكتمل</h2>
+            <Badge tone="warn">متوقّف</Badge>
+          </div>
 
-          <p className="mt-3 rounded-xl bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
-            ستكمل من بداية الجزء الذي توقفت عنده بمؤقت جديد — الوقت المنقضي في ذلك الجزء لا يُسترجع.
-          </p>
+          <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <Stat label="أجبت عنها" value={`${resumable.answered}`} />
+            <Stat label="من أصل" value={`${resumable.totalQuestions}`} />
+            <Stat label="الجزء" value={`${resumable.partIndex + 1} / ${resumable.totalParts}`} />
+            <Stat
+              label="بدأته"
+              value={new Date(resumable.startedAt).toLocaleDateString('ar-SA', {
+                month: 'short', day: 'numeric',
+              })}
+            />
+          </div>
+
+          <Alert tone="warn">
+            ستكمل من بداية الجزء الذي توقفت عنده بمؤقت جديد — الوقت المنقضي في ذلك الجزء
+            لا يُسترجع.
+          </Alert>
 
           <div className="mt-4 flex flex-wrap gap-2">
-            <button
-              type="button"
+            <Button
+              variant="primary"
               onClick={() => continueAttempt(resumable.attemptId)}
               disabled={pending}
-              className="rounded-xl bg-[color:var(--app-brand)] px-6 py-2.5 font-bold text-white disabled:opacity-50"
             >
               {pending ? '…جارٍ التحميل' : 'إكمال الاختبار'}
-            </button>
-            <button
-              type="button"
-              onClick={() => discardAttempt(resumable.attemptId)}
-              disabled={pending}
-              className="rounded-xl border border-[color:var(--app-line)] px-4 py-2.5 text-sm font-semibold"
-            >
+            </Button>
+            <Button onClick={() => discardAttempt(resumable.attemptId)} disabled={pending}>
               تجاهل والبدء من جديد
-            </button>
+            </Button>
           </div>
-        </section>
+        </Card>
       )}
 
       {/* ---------- full exam ---------- */}
-      <section className="glass rounded-2xl p-6">
-        <h2 className="text-lg font-bold">الاختبار الكامل</h2>
-        <p className="mb-4 text-sm text-[color:var(--app-muted)]">
+      <Card className="animate-fade-up p-6">
+        <div className="mb-1 flex flex-wrap items-baseline gap-2">
+          <h2 className="text-lg font-bold">الاختبار الكامل</h2>
+          <Badge tone="brand">مطابق لقياس</Badge>
+        </div>
+        <p className="mb-5 text-sm text-[color:var(--app-muted)]">
           100 سؤال · 120 دقيقة · 4 أقسام × 3 أجزاء
         </p>
 
-        <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {SECTION_LIST.map((s) => (
-            <div key={s.id} className="rounded-xl bg-black/[0.04] px-3 py-2 text-center dark:bg-white/[0.05]">
-              <b className="block text-sm">{s.nameAr}</b>
-              <span className="text-xs text-[color:var(--app-muted)]">
-                {s.weightPct}% · متاح {pool[s.id] ?? 0}
-              </span>
-            </div>
-          ))}
+        <div className="mb-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {SECTION_LIST.map((s) => {
+            const available = pool[s.id] ?? 0;
+            return (
+              <div
+                key={s.id}
+                className="rounded-xl bg-black/[0.04] px-3 py-3 text-center dark:bg-white/[0.05]"
+              >
+                <div className="text-lg" aria-hidden>{SECTION_ICON[s.id]}</div>
+                <div className="mt-0.5 text-sm font-bold">{s.nameAr}</div>
+                <div className="text-[0.68rem] text-[color:var(--app-muted)]">
+                  {s.weightPct}%
+                  <span className={available === 0 ? 'text-amber-600 dark:text-amber-400' : ''}>
+                    {' '}· {available === 0 ? 'لا يوجد' : `${available} سؤال`}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
         </div>
 
-        <button
-          type="button"
+        <Button
+          variant="primary"
+          size="lg"
+          block
           onClick={() => launch(() => startFullExam())}
           disabled={pending || !checkedResume}
-          className="w-full rounded-xl bg-[color:var(--app-brand)] py-3.5 text-lg font-bold text-white disabled:opacity-50"
         >
           {pending ? '…جارٍ التحضير' : resumable ? 'بدء اختبار جديد' : 'ابدأ الاختبار'}
-        </button>
+        </Button>
 
-        <p className="mt-2 text-center text-xs text-[color:var(--app-muted)]">
-          سيتم الدخول في وضع الاختبار الكامل ولن تظهر واجهة الموقع.
+        <p className="mt-3 text-center text-xs text-[color:var(--app-muted)]">
+          ⛶ سيملأ الاختبار الشاشة بالكامل ولن تظهر واجهة الموقع
         </p>
-      </section>
+      </Card>
 
       {/* ---------- practice ---------- */}
-      <section className="glass rounded-2xl p-6">
-        <h2 className="text-lg font-bold">تدريب على قسم</h2>
+      <Card className="animate-fade-up p-6">
+        <div className="mb-1 flex flex-wrap items-baseline gap-2">
+          <h2 className="text-lg font-bold">تدريب على قسم</h2>
+          <Badge>مع الشرح</Badge>
+        </div>
         <p className="mb-4 text-sm text-[color:var(--app-muted)]">
           نفس واجهة الاختبار، مع شرح بعد كل سؤال.
         </p>
@@ -223,58 +253,51 @@ export function ExamLauncher({
           {SECTION_LIST.map((s) => {
             const available = pool[s.id] ?? 0;
             return (
-              <button
+              <Pill
                 key={s.id}
-                type="button"
-                onClick={() => setPracticeSection(s.id)}
+                active={practiceSection === s.id}
                 disabled={available === 0}
-                className={`rounded-full px-4 py-2 text-sm font-semibold disabled:opacity-40 ${
-                  practiceSection === s.id
-                    ? 'bg-[color:var(--app-brand)] text-white'
-                    : 'border border-[color:var(--app-line)]'
-                }`}
+                onClick={() => setPracticeSection(s.id)}
                 title={available === 0 ? 'لا توجد أسئلة منشورة في هذا القسم' : undefined}
               >
-                {s.nameAr} ({available})
-              </button>
+                <span aria-hidden className="ml-1">{SECTION_ICON[s.id]}</span>
+                {s.nameAr}
+                <span className="mr-1 opacity-60">({available})</span>
+              </Pill>
             );
           })}
         </div>
 
         <div className="mb-4 flex flex-wrap gap-2">
           {PRACTICE_SIZES.map((n) => (
-            <button
+            <Pill
               key={n}
-              type="button"
+              tone="accent"
+              active={practiceSize === n}
               onClick={() => setPracticeSize(n)}
-              disabled={(pool[practiceSection] ?? 0) < n}
-              className={`rounded-full px-4 py-1.5 text-sm font-semibold disabled:opacity-40 ${
-                practiceSize === n
-                  ? 'bg-[color:var(--app-accent)] text-[#221503]'
-                  : 'border border-[color:var(--app-line)]'
-              }`}
+              disabled={practiceAvailable < n}
             >
               {n} أسئلة
-            </button>
+            </Pill>
           ))}
         </div>
 
-        <button
-          type="button"
+        <Button
+          block
           onClick={() => launch(() => startPractice(practiceSection, practiceSize))}
-          disabled={pending || (pool[practiceSection] ?? 0) === 0}
-          className="w-full rounded-xl border border-[color:var(--app-line)] py-3 font-bold disabled:opacity-40"
+          disabled={pending || practiceAvailable === 0}
         >
           ابدأ التدريب
-        </button>
-      </section>
+        </Button>
+      </Card>
 
       {warnings.length > 0 && (
-        <div className="glass rounded-2xl px-5 py-4 text-sm text-amber-700 dark:text-amber-300">
+        <Alert tone="warn">
           <b className="mb-1 block">ملاحظة على المحتوى المتاح</b>
           <ul className="space-y-0.5">{warnings.map((w, i) => <li key={i}>• {w}</li>)}</ul>
-        </div>
+        </Alert>
       )}
     </div>
   );
 }
+

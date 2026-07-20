@@ -210,10 +210,23 @@ export function buildExam(
   for (const [section, specs] of partsBySection) {
     const wanted = specs.reduce((n, s) => n + s.questionCount, 0);
 
+    /**
+     * Narrowing is the UNION across this section's specs.
+     *
+     * The pool is built once per section, not once per part, so a spec
+     * whose filter was applied alone would starve its siblings. Union
+     * keeps every spec's questions reachable; an exam blueprint sets no
+     * filters at all, so both sets stay empty and nothing is narrowed.
+     */
+    const skillIds = [...new Set(specs.flatMap((s) => s.skillIds ?? []))];
+    const difficulties = [...new Set(specs.flatMap((s) => s.difficulties ?? []))];
+
     const pool = selectPool(snapshot, {
       section,
       statuses: opts.includeDrafts ? ['published', 'draft'] : ['published'],
       excludeIds: opts.excludeIds,
+      skillIds: skillIds.length ? skillIds : undefined,
+      difficulties: difficulties.length ? difficulties : undefined,
     });
 
     const groups = shuffle(groupByStimulus(pool, section), rng);

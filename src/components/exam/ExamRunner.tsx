@@ -16,7 +16,7 @@ import { ExamShell } from './ExamShell';
 import { QuestionBlock } from './QuestionBlock';
 import { ReviewGrid, ReviewFooter } from './ReviewGrid';
 import { ExamStimulus } from './ExamStimulus';
-import { ResultsDashboard } from '@/components/results/ResultsDashboard';
+import { ResultsDashboard, type SkillBaseline } from '@/components/results/ResultsDashboard';
 import {
   createSession, sessionReducerWithRevision, canGoBack, currentPart, currentScreen,
   currentQuestions, isLastPart, isLastScreen, isScreenLocked, questionCountLabel,
@@ -25,7 +25,7 @@ import {
 import { useAttemptSync } from '@/lib/exam/useAttemptSync';
 import { openAttempt, submitAttempt } from '@/app/actions/attempts';
 import { buildOutcomes } from '@/lib/exam/scoring';
-import { SECTION_DEFS } from '@/lib/content/taxonomy';
+import { SECTION_DEFS, SKILL_BY_ID } from '@/lib/content/taxonomy';
 import type { BuiltExam } from '@/lib/exam/buildExam';
 import type { OptionKey } from '@/lib/content/schema';
 
@@ -77,9 +77,18 @@ export interface ExamRunnerProps {
   resume?: ResumeState;
   /** Launch a targeted drill from the study plan. */
   onPractice?: (section: string, count: number) => void;
+  /**
+   * Per-skill standing BEFORE this sitting, for the practice summary.
+   *
+   * Purely a pass-through to the results screen — the runner neither
+   * reads it nor lets it affect the session. The exam never supplies it.
+   */
+  skillBaseline?: SkillBaseline[];
 }
 
-export function ExamRunner({ exam, onExit, persist = true, userId, resume, onPractice }: ExamRunnerProps) {
+export function ExamRunner({
+  exam, onExit, persist = true, userId, resume, onPractice, skillBaseline,
+}: ExamRunnerProps) {
   const [state, dispatch] = useReducer(
     sessionReducerWithRevision,
     exam,
@@ -254,7 +263,12 @@ export function ExamRunner({ exam, onExit, persist = true, userId, resume, onPra
               {attemptId ? `${SYNC_LABEL[sync.status] || '✓ محفوظ'} · رقم المحاولة ${attemptId.slice(0, 8)}` : '⚠ لم تُحفظ هذه المحاولة'}
             </p>
           )}
-          <ResultsDashboard session={state} onExit={onExit} onPractice={onPractice} />
+          <ResultsDashboard
+            session={state}
+            onExit={onExit}
+            onPractice={onPractice}
+            skillBaseline={skillBaseline}
+          />
         </div>
       </div>
     );
@@ -468,6 +482,14 @@ export function ExamRunner({ exam, onExit, persist = true, userId, resume, onPra
                     : `✗ الإجابة الصحيحة هي ${q.correctOption}`}
                 </b>
                 {q.explanationAr ?? 'لا يوجد شرح لهذا السؤال بعد.'}
+                {/* Naming the skill is what turns a wrong answer into a
+                    study target — without it the learner knows they
+                    missed one but not what to go work on. */}
+                {SKILL_BY_ID[q.skillId] && (
+                  <span className="mt-2 block text-xs opacity-75">
+                    المهارة: {SKILL_BY_ID[q.skillId].nameAr}
+                  </span>
+                )}
               </div>
             ) : (
               <button

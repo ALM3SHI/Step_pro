@@ -7,10 +7,13 @@ import { TimeAnalysis } from './TimeAnalysis';
 import { QuestionReview } from './QuestionReview';
 import { SkillBreakdown } from './SkillBreakdown';
 import { InsightsPanel, StudyPlanPanel } from './InsightsPanel';
+import { PracticeSummary, type SkillBaseline } from './PracticeSummary';
 import {
   analyzeTime, buildOutcomes, buildReviewRows, scoreSession, secondsPerQuestion,
 } from '@/lib/exam/scoring';
 import { buildStudyPlan, deriveInsights } from '@/lib/exam/insights';
+import { UNTIMED_SECONDS } from '@/lib/content/blueprint';
+import { Button } from '@/components/ui';
 import type { SessionState } from '@/lib/exam/session';
 
 /**
@@ -21,14 +24,24 @@ import type { SessionState } from '@/lib/exam/session';
  * review. Everything is derived from this sitting — cross-attempt
  * trends live on the history page, which has the data for them.
  */
+export type { SkillBaseline };
+
 export function ResultsDashboard({
   session,
   onExit,
   onPractice,
+  skillBaseline,
 }: {
   session: SessionState;
   onExit?: () => void;
   onPractice?: (section: string, count: number) => void;
+  /**
+   * Present only for targeted practice. When supplied, the drill's
+   * effect on each skill is shown ahead of the generic breakdown —
+   * that comparison is the whole point of a practice session, and the
+   * exam has no baseline to compare against.
+   */
+  skillBaseline?: SkillBaseline[];
 }) {
   const score = useMemo(() => scoreSession(session), [session]);
   const timing = useMemo(() => analyzeTime(session), [session]);
@@ -40,6 +53,19 @@ export function ResultsDashboard({
 
   const flaggedCount = Object.keys(session.flags).length;
 
+  /**
+   * Untimed sessions must not report time *management*.
+   *
+   * Targeted practice runs on a 12-hour clock that exists only to keep
+   * the engine's single timing path. Rendering "استغلال الوقت 0%" and
+   * "من 720:00" against it turns a deliberate non-constraint into what
+   * looks like a catastrophic result.
+   */
+  const untimed = useMemo(
+    () => session.exam.parts.every((p) => p.durationSeconds >= UNTIMED_SECONDS),
+    [session.exam.parts],
+  );
+
   return (
     <div className="space-y-5 pb-16">
       <ScoreHero
@@ -48,12 +74,17 @@ export function ResultsDashboard({
         allocatedSeconds={timing.totalAllocated}
         flaggedCount={flaggedCount}
         examName={session.exam.nameAr}
+        untimed={untimed}
       />
 
-      <div className="grid gap-5 lg:grid-cols-2">
+      <div className={untimed ? '' : 'grid gap-5 lg:grid-cols-2'}>
         <SectionBars sections={score.bySection} />
-        <TimeAnalysis analysis={timing} />
+        {!untimed && <TimeAnalysis analysis={timing} />}
       </div>
+
+      {skillBaseline && (
+        <PracticeSummary skills={score.bySkill} baseline={skillBaseline} />
+      )}
 
       <InsightsPanel insights={insights} />
 
@@ -64,13 +95,9 @@ export function ResultsDashboard({
       <QuestionReview rows={rows} secondsPerQuestion={perQuestionSeconds} />
 
       {onExit && (
-        <button
-          type="button"
-          onClick={onExit}
-          className="glass w-full rounded-2xl py-4 font-bold text-[color:var(--app-brand)]"
-        >
+        <Button size="lg" block onClick={onExit} className="text-[color:var(--app-brand)]">
           العودة للرئيسية
-        </button>
+        </Button>
       )}
     </div>
   );

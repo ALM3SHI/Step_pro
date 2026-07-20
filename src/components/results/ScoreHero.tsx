@@ -2,6 +2,7 @@
 
 import { memo } from 'react';
 import { bandFor, STATUS } from './palette';
+import { Card, Stat } from '@/components/ui';
 import type { ExamScore } from '@/lib/exam/scoring';
 
 const clock = (s: number) => {
@@ -16,6 +17,8 @@ export interface ScoreHeroProps {
   allocatedSeconds: number;
   flaggedCount: number;
   examName: string;
+  /** Practice runs on an open clock; time-budget figures are meaningless. */
+  untimed?: boolean;
 }
 
 /**
@@ -28,7 +31,7 @@ export interface ScoreHeroProps {
  * performance nearer 70.
  */
 export const ScoreHero = memo(function ScoreHero({
-  score, usedSeconds, allocatedSeconds, flaggedCount, examName,
+  score, usedSeconds, allocatedSeconds, flaggedCount, examName, untimed = false,
 }: ScoreHeroProps) {
   const band = bandFor(score.weightedPct);
   const [lo, hi] = score.estimatedStepRange;
@@ -41,7 +44,7 @@ export const ScoreHero = memo(function ScoreHero({
   const CIRC = 2 * Math.PI * R;
 
   return (
-    <section className="glass rounded-2xl p-6 sm:p-8" aria-labelledby="score-title">
+    <Card className="animate-scale-in p-6 sm:p-8" aria-labelledby="score-title">
       <p className="mb-6 text-center text-xs text-[color:var(--app-muted)]">{examName}</p>
 
       <div className="flex flex-col items-center gap-8 sm:flex-row sm:justify-center">
@@ -83,54 +86,41 @@ export const ScoreHero = memo(function ScoreHero({
             تقدير تقريبي مبني على أدائك في هذه المحاولة، وليس درجة رسمية من قياس.
           </p>
 
-          <dl className="grid grid-cols-2 gap-2">
-            <Stat label="الدقة الموزونة" value={`${score.weightedPct.toFixed(0)}%`} />
-            <Stat label="الدرجة الخام" value={`${score.rawPct.toFixed(0)}%`} />
-            <Stat label="إجابات صحيحة" value={`${score.correct} / ${score.total}`} />
-            <Stat label="الوقت المستغرق" value={clock(usedSeconds)}
-              hint={`من ${clock(allocatedSeconds)}`} />
-            <Stat label="أجبت عنها" value={String(score.answered)} />
+          <dl className="stagger m-0 grid grid-cols-2 gap-2">
+            <Stat semantic label="الدقة الموزونة" value={`${score.weightedPct.toFixed(0)}%`} />
+            <Stat semantic label="الدرجة الخام" value={`${score.rawPct.toFixed(0)}%`} />
+            <Stat semantic label="إجابات صحيحة" value={`${score.correct} / ${score.total}`} />
             <Stat
+              semantic
+              label="الوقت المستغرق"
+              value={clock(usedSeconds)}
+              hint={untimed ? undefined : `من ${clock(allocatedSeconds)}`}
+            />
+            <Stat semantic label="أجبت عنها" value={String(score.answered)} />
+            <Stat
+              semantic
               label="تركتها"
               value={String(score.unanswered)}
               tone={score.unanswered > 0 ? 'warn' : undefined}
               hint={score.unanswered > 0 ? 'تُحتسب خطأً' : undefined}
             />
-            <Stat label="علّمتها للمراجعة" value={String(flaggedCount)} />
+            <Stat semantic label="علّمتها للمراجعة" value={String(flaggedCount)} />
             <Stat
-              label="استغلال الوقت"
-              value={allocatedSeconds ? `${Math.round((usedSeconds / allocatedSeconds) * 100)}%` : '—'}
+              semantic
+              label={untimed ? 'متوسط السؤال' : 'استغلال الوقت'}
+              value={
+                untimed
+                  ? score.answered
+                    ? `${Math.round(usedSeconds / score.answered)} ث`
+                    : '—'
+                  : allocatedSeconds
+                    ? `${Math.round((usedSeconds / allocatedSeconds) * 100)}%`
+                    : '—'
+              }
             />
           </dl>
         </div>
       </div>
-    </section>
+    </Card>
   );
 });
-
-function Stat({
-  label, value, hint, tone,
-}: {
-  label: string;
-  value: string;
-  hint?: string;
-  tone?: 'warn';
-}) {
-  return (
-    <div className="rounded-xl bg-black/[0.04] px-3 py-2.5 dark:bg-white/[0.05]">
-      <dt className="text-[0.68rem] leading-tight text-[color:var(--app-muted)]">{label}</dt>
-      <dd
-        className={`text-base font-bold tabular-nums ${
-          tone === 'warn' ? 'text-amber-700 dark:text-amber-300' : ''
-        }`}
-      >
-        {value}
-        {hint && (
-          <span className="mr-1 text-[0.65rem] font-normal text-[color:var(--app-muted)]">
-            {hint}
-          </span>
-        )}
-      </dd>
-    </div>
-  );
-}

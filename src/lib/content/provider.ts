@@ -13,13 +13,15 @@
  */
 
 import type { AudioClip, Passage, Question } from './schema';
-import type { SectionId } from './taxonomy';
+import type { Difficulty, SectionId } from './taxonomy';
 
 export interface PoolQuery {
   section: SectionId;
   /** Only `published` is servable; drafts lack verified answer keys. */
   statuses?: Array<Question['status']>;
   skillIds?: string[];
+  /** Targeted practice narrows to one band; the exam never sets this. */
+  difficulties?: Difficulty[];
   excludeIds?: Set<string>;
 }
 
@@ -38,11 +40,13 @@ export interface ContentProvider {
 export function selectPool(snapshot: ContentSnapshot, query: PoolQuery): Question[] {
   const statuses = new Set(query.statuses ?? ['published']);
   const skills = query.skillIds?.length ? new Set(query.skillIds) : null;
+  const difficulties = query.difficulties?.length ? new Set(query.difficulties) : null;
 
   return snapshot.questions.filter((q) => {
     if (q.section !== query.section) return false;
     if (!statuses.has(q.status)) return false;
     if (skills && !skills.has(q.skillId)) return false;
+    if (difficulties && !difficulties.has(q.difficulty)) return false;
     if (query.excludeIds?.has(q.id)) return false;
 
     // A question whose stimulus is missing is unanswerable. Cheaper to
