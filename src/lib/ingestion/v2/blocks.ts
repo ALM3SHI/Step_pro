@@ -100,9 +100,20 @@ function couldBeBareOption(line: string): boolean {
   return t.split(/\s+/).length <= MAX_BARE_OPTION_WORDS;
 }
 
+/**
+ * `1)` / `(2)` opening a line of prose — a passage paragraph marker.
+ *
+ * Distinct from NUMBERED, which is a question number. A short numbered
+ * paragraph ending in a question mark ("(2) So, who can receive and who
+ * can donate in ABO system?") is passage text, and reading it as a stem
+ * splits the passage and strands its real questions.
+ */
+const PARAGRAPH_MARKER = /^\s*\(\d{1,2}\)\s+/;
+
 function isStemLine(line: string): boolean {
   const t = line.trim();
   if (!t) return false;
+  if (PARAGRAPH_MARKER.test(t)) return false;
   return BLANK_MARKER.test(t) || /[?؟]\s*$/.test(t) || NUMBERED.test(t);
 }
 
@@ -264,6 +275,58 @@ function splitByBareRuns(
     if (isStemLine(lines[i].text)) stemIdx.push(i);
   }
 
+  /**
+   * Punctuation found nothing — fall back to SHAPE.
+   *
+   * Plenty of real stems carry neither a blank nor a question mark:
+   * "The word compatible in paragraph 1) is closest in meaning to",
+   * "The passage suggests we should NOT use in our homes". What they do
+   * have is option-shaped lines directly beneath them, which is the
+   * document's own structure rather than a guess about wording.
+   *
+   * Only used when the punctuation pass came back empty, so it can never
+   * override a stem that was positively identified.
+   */
+  if (!stemIdx.length) {
+    for (let i = 0; i < lines.length; i++) {
+      const following = lines.slice(i + 1).findIndex((l) => !couldBeBareOption(l.text));
+      const runLength = following === -1 ? lines.length - i - 1 : following;
+      if (runLength >= minOptions) { stemIdx.push(i); i += runLength; }
+    }
+  }
+
+  /**
+   * Options that are themselves questions.
+   *
+   * "What did Steve ask in his message to Tom?" is answered by four
+   * candidate questions, so every line in the item ends in `?` and each
+   * one looks like a stem. Read naively that is five questions with no
+   * options; read structurally it is one question with four.
+   *
+   * The discriminator is contiguity: a real question is followed by its
+   * options, never immediately by another stem with nothing between
+   * them. So a run of adjacent stem lines collapses to the first as stem
+   * and the rest as its options. Runs longer than five are left alone —
+   * that is a parse failure, not an item.
+   */
+  const consumedAsOption = new Set<number>();
+  for (let s = 0; s < stemIdx.length; s++) {
+    const start = stemIdx[s];
+    if (consumedAsOption.has(start)) continue;
+
+    const run: number[] = [start];
+    while (
+      s + run.length < stemIdx.length &&
+      stemIdx[s + run.length] === start + run.length
+    ) {
+      run.push(stemIdx[s + run.length]);
+    }
+
+    if (run.length >= minOptions + 1 && run.length <= OPTION_LETTERS.length + 1) {
+      for (const idx of run.slice(1)) consumedAsOption.add(idx);
+    }
+  }
+
   if (!stemIdx.length) {
     // Nothing recognisable. Report the whole span rather than returning
     // an empty success — this is exactly the 0/0 silence being fixed.
@@ -281,14 +344,27 @@ function splitByBareRuns(
 
   for (let s = 0; s < stemIdx.length; s++) {
     const start = stemIdx[s];
-    const end = s + 1 < stemIdx.length ? stemIdx[s + 1] : lines.length;
+    // Absorbed as an option by the stem above it.
+    if (consumedAsOption.has(start)) continue;
+
+    // The next stem that was NOT absorbed bounds this item.
+    let end = lines.length;
+    for (let k = s + 1; k < stemIdx.length; k++) {
+      if (!consumedAsOption.has(stemIdx[k])) { end = stemIdx[k]; break; }
+    }
 
     const stemRaw = lines[start].text;
     const num = stemRaw.match(NUMBERED);
     const sourceNumber = num ? Number(num[1]) : undefined;
     const stem = (num ? num[2] : stemRaw).trim();
 
-    const candidates = lines.slice(start + 1, end).filter((l) => couldBeBareOption(l.text));
+    // Absorbed stem lines are options despite ending in `?`, so they
+    // bypass couldBeBareOption — which exists to keep stems out of
+    // options, exactly the judgement already made above.
+    const candidates = lines
+      .slice(start + 1, end)
+      .filter((l, offset) =>
+        consumedAsOption.has(start + 1 + offset) || couldBeBareOption(l.text));
 
     if (candidates.length < minOptions) {
       failed.push({

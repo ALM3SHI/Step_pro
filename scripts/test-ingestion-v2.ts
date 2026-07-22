@@ -182,10 +182,34 @@ It continues without any question or option marker.`;
     !plan.questions.some((q) =>
       q.warnings.includes(TEMPORARY_SKILL_WARNING) && q.skillId === 'main'));
 
-  check('failed blocks are retained for review', plan.failed.length > 0,
-    `${plan.failed.length} kept`);
-  check('every failed block carries a reason and its text',
+  // The reading bank now parses completely. Retention is still asserted,
+  // but against a case that genuinely cannot parse — pinning this to
+  // "the reading bank has failures" would turn a future fix into a
+  // test failure.
+  check('reading bank parses with no failures left', plan.failed.length === 0,
+    `${plan.failed.length} failed`);
+  check('every failed block, when present, carries a reason and its text',
     plan.failed.every((f) => f.reason && f.text));
+
+  /**
+   * The whole point of the recovery work: the source carries 150 items,
+   * numbered by its own "N / 150" markers, and every one is extracted
+   * and attached to a passage.
+   */
+  check('all 150 source items are extracted', plan.questions.length === 150,
+    `${plan.questions.length}`);
+  check('all 150 are linked to a passage',
+    plan.questions.filter((q) => q.passageRef !== undefined).length === 150);
+  check('no question is left unlinked', plan.unlinked.length === 0);
+  check('no passage is left empty', plan.emptyPassages.length === 0);
+
+  // Guards against recovering count by swallowing passage text as stems.
+  check('no stem is passage-length', plan.questions.every((q) => q.text.length <= 200),
+    `${plan.questions.filter((q) => q.text.length > 200).length} over-long`);
+  check('every question has at least three options',
+    plan.questions.every((q) => Object.keys(q.options).length >= 3));
+  check('every passage owns at least one question',
+    plan.passages.every((_, i) => plan.questions.some((q) => q.passageRef === i)));
 }
 
 // ---------------------------------------------------------------------
