@@ -36,6 +36,15 @@ export interface AnswerKeyResult {
   /** How the key section was recognised, for the report. */
   detectedFormat: string | null;
   removedLineCount: number;
+  /**
+   * Output line index -> original line index.
+   *
+   * Key removal renumbers everything after it, so without this a parser
+   * reporting "line 214" points at the wrong place in the source — and
+   * page numbers, which are derived from original lines, would be wrong
+   * for every question after the first key block.
+   */
+  lineMap: number[];
 }
 
 /**
@@ -167,13 +176,22 @@ export function extractAnswerKeys(input: string): AnswerKeyResult {
 
   const removedLineCount = keep.filter((k) => !k).length;
 
+  const lineMap: number[] = [];
+  const kept: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (!keep[i]) continue;
+    lineMap.push(i);
+    kept.push(lines[i]);
+  }
+
   return {
     entries,
-    text: lines.filter((_, i) => keep[i]).join('\n'),
+    text: kept.join('\n'),
     conflicts,
     malformed,
     detectedFormat,
     removedLineCount,
+    lineMap,
   };
 }
 

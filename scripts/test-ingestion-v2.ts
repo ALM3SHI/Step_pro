@@ -189,6 +189,87 @@ It continues without any question or option marker.`;
 }
 
 // ---------------------------------------------------------------------
+// 4b. Review diagnostics: pages, linkage, confidence, unlinked, empties
+// ---------------------------------------------------------------------
+{
+  const doc = await textFileAdapter.load(readFileSync('reading_bank.txt', 'utf8'), 'reading_bank.txt');
+  const plan = ingest(doc, { section: 'reading', assignTemporarySkill: true });
+
+  check('every question carries a source page',
+    plan.questions.every((q) => typeof q.sourcePage === 'number'),
+    `${plan.questions.filter((q) => q.sourcePage == null).length} missing`);
+  check('every passage carries a source page',
+    plan.passages.every((p) => typeof p.sourcePage === 'number'));
+  check('source lines are within the document',
+    plan.questions.every((q) => q.sourceLine > 0));
+
+  // The mechanism must be reported truthfully, not invented.
+  check('linked questions report the region-position mechanism',
+    plan.questions.every((q) => q.linkage?.mechanism === 'region-position'));
+  check('every link carries structural evidence',
+    plan.questions.every((q) => (q.linkage?.evidence.length ?? 0) > 0));
+
+  // Confidence is an audit of the link, so it must be decomposable.
+  check('every linked question has a confidence score',
+    plan.questions.every((q) => typeof q.confidence?.score === 'number'));
+  check('confidence is bounded 0..1',
+    plan.questions.every((q) => q.confidence!.score >= 0 && q.confidence!.score <= 1));
+  check('confidence signals sum to the score',
+    plan.questions.every((q) => {
+      const sum = q.confidence!.signals.filter((s) => s.passed).reduce((n, s) => n + s.weight, 0);
+      return Math.abs(sum - q.confidence!.score) < 1e-9;
+    }));
+  check('band matches the score',
+    plan.questions.every((q) => {
+      const { score, band } = q.confidence!;
+      return band === (score >= 0.75 ? 'high' : score >= 0.5 ? 'medium' : 'low');
+    }));
+
+  // The rule that matters: never attach to a nearest guess.
+  check('unlinked questions are a separate channel', Array.isArray(plan.unlinked));
+  check('no unlinked question carries a passageRef',
+    plan.unlinked.every((u) => u.passageRef === undefined));
+  check('every unlinked question states why',
+    plan.unlinked.every((u) => Boolean(u.reason)));
+  check('unlinked are NOT counted among linked questions',
+    plan.questions.every((q) => q.passageRef !== undefined));
+
+  // Empty passages get a probable cause rather than silence.
+  check('empty passages are reported with a cause',
+    plan.emptyPassages.every((p) => Boolean(p.probableCause)));
+  check('empty passages are genuinely unreferenced',
+    plan.emptyPassages.every((e) =>
+      !plan.questions.some((q) => q.passageRef === e.index)));
+
+  // Report totals must agree with the arrays they summarise.
+  check('report.unlinkedQuestions matches the array',
+    plan.report.unlinkedQuestions === plan.unlinked.length);
+  check('report.emptyPassages matches the array',
+    plan.report.emptyPassages === plan.emptyPassages.length);
+  check('report.temporarySkills matches the flagged questions',
+    plan.report.temporarySkills ===
+      plan.questions.filter((q) => q.warnings.includes(TEMPORARY_SKILL_WARNING)).length);
+  check('report.confidence bands sum to linked questions',
+    plan.report.confidence.high + plan.report.confidence.medium + plan.report.confidence.low
+      === plan.questions.length);
+  check('report.duplicatePassagesMerged equals total reprints',
+    plan.report.duplicatePassagesMerged ===
+      plan.passages.reduce((n, p) => n + Math.max(0, p.occurrences - 1), 0));
+}
+
+// Page numbers must survive answer-key removal, which renumbers lines.
+{
+  const doc = await textAdapter.load(
+    `Answers:\n1 A\n2 B\n\n1. First question here?\nA) one\nB) two\n\n2. Second question here?\nA) three\nB) four`,
+    'keyed',
+  );
+  const plan = ingest(doc, { section: 'grammar' });
+  check('questions after a key block still resolve a page',
+    plan.questions.every((q) => typeof q.sourcePage === 'number'),
+    JSON.stringify(plan.questions.map((q) => q.sourcePage)));
+}
+
+// ---------------------------------------------------------------------
 // 5. Parsers are chosen, not guessed
 // ---------------------------------------------------------------------
 {

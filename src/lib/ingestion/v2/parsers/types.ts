@@ -10,6 +10,27 @@ import type { SectionId } from '../../../content/taxonomy';
  * is a dropdown on the form — so it is passed in, not inferred.
  */
 
+/**
+ * How a question came to be attached to its passage.
+ *
+ * Recorded honestly, because a review tool that shows an invented
+ * mechanism is worse than one that shows none. Today there is exactly
+ * one: the question sat inside that passage's region of the document.
+ * Nothing here does keyword matching, and nothing attaches a question to
+ * the nearest passage as a fallback.
+ */
+export type LinkMechanism =
+  /** The question appeared in the text region opened by this passage. */
+  | 'region-position'
+  /** No passage region was open. The question is NOT linked. */
+  | 'unlinked';
+
+export interface Linkage {
+  mechanism: LinkMechanism;
+  /** Structural facts that produced the link, for display. */
+  evidence: string[];
+}
+
 export interface ParsedItem {
   sourceNumber?: number;
   stem: string;
@@ -17,10 +38,16 @@ export interface ParsedItem {
   correctOption?: OptionLetter;
   /** Index into ParseOutput.passages. Reading only. */
   passageRef?: number;
+  linkage?: Linkage;
   skillId?: string;
   sourceLine: number;
   sourcePage?: number;
   warnings: string[];
+}
+
+/** A question the parser refused to attach to any passage. */
+export interface UnlinkedItem extends ParsedItem {
+  reason: string;
 }
 
 export interface ParsedPassage {
@@ -30,11 +57,24 @@ export interface ParsedPassage {
   contentHash: string;
   /** How many times this passage appeared in the source. */
   occurrences: number;
+  /** Whether the source labelled it, e.g. "Passage 3 : Title". */
+  hadExplicitHeader: boolean;
+  sourceLine: number;
+  sourcePage?: number;
 }
 
 export interface ParseOutput {
   items: ParsedItem[];
   passages: ParsedPassage[];
+  /**
+   * Questions with no passage.
+   *
+   * Kept apart from `items` rather than attached to the nearest passage.
+   * A wrong link is indistinguishable from a right one once saved, so
+   * "no answer" is the only honest output when the structure did not
+   * say.
+   */
+  unlinked: UnlinkedItem[];
   /** Never dropped — retained for manual review. */
   failed: FailedBlock[];
   notes: string[];

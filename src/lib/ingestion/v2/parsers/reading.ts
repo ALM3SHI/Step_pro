@@ -1,6 +1,8 @@
 import { splitBlocks, type FailedBlock } from '../blocks';
 import { hashText } from '../../dedupe';
-import type { ParseContext, ParseOutput, ParsedItem, ParsedPassage, SectionParser } from './types';
+import type {
+  ParseContext, ParseOutput, ParsedItem, ParsedPassage, SectionParser, UnlinkedItem,
+} from './types';
 
 /**
  * Reading — a passage with its questions, not a list of questions.
@@ -43,6 +45,10 @@ interface Region {
   passageTitle?: string;
   questionLines: string[];
   startLine: number;
+  /** Line the question run began on, for reporting. */
+  questionsStartLine: number;
+  /** True when the source printed "Passage N : Title" above it. */
+  hadExplicitHeader: boolean;
 }
 
 /**
@@ -60,12 +66,21 @@ function splitIntoRegions(lines: string[]): Region[] {
   // Returns the region; the caller assigns it to `current`. Assigning
   // inside the helper would hide the write from control-flow analysis
   // and narrow `current` to `never` at every later use.
-  const newRegion = (title: string | undefined, line: number): Region => {
+  const newRegion = (
+    title: string | undefined, line: number, hadExplicitHeader: boolean,
+  ): Region => {
     const region: Region = {
-      passageLines: [], passageTitle: title, questionLines: [], startLine: line,
+      passageLines: [], passageTitle: title, questionLines: [],
+      startLine: line, questionsStartLine: line, hadExplicitHeader,
     };
     regions.push(region);
     return region;
+  };
+
+  // Record where the question run starts, so a question can be traced
+  // back to its line in the source rather than to the passage header.
+  const noteQuestionLine = (region: Region, line: number) => {
+    if (!region.questionLines.length) region.questionsStartLine = line;
   };
 
   for (let i = 0; i < lines.length; i++) {
@@ -77,14 +92,14 @@ function splitIntoRegions(lines: string[]): Region[] {
     // A header only counts when a title or a paragraph follows it —
     // "Reading" alone appears in ordinary prose.
     if (header && (header[2]?.trim() || PARAGRAPH.test(lines[i + 1]?.trim() ?? ''))) {
-      current = newRegion(header[2]?.trim() || undefined, i + 1);
+      current = newRegion(header[2]?.trim() || undefined, i + 1, true);
       inPassage = true;
       continue;
     }
 
     if (PARAGRAPH.test(t)) {
       // A numbered paragraph with no header still opens a passage.
-      if (!current || !inPassage) current = newRegion(undefined, i + 1);
+      if (!current || !inPassage) current = newRegion(undefined, i + 1, false);
       current.passageLines.push(t);
       inPassage = true;
       continue;
@@ -93,12 +108,13 @@ function splitIntoRegions(lines: string[]): Region[] {
     if (!current) {
       // Prose before any marker: treat long text as an untitled passage,
       // anything shorter as the start of the question run.
-      current = newRegion(undefined, i + 1);
+      current = newRegion(undefined, i + 1, false);
       if (t.length >= PROSE_MIN_CHARS) {
         inPassage = true;
         current.passageLines.push(t);
       } else {
         inPassage = false;
+        noteQuestionLine(current, i + 1);
         current.questionLines.push(t);
       }
       continue;
@@ -111,6 +127,7 @@ function splitIntoRegions(lines: string[]): Region[] {
     if (inPassage && t.length >= PROSE_MIN_CHARS) { current.passageLines.push(t); continue; }
 
     inPassage = false;
+    noteQuestionLine(current, i + 1);
     current.questionLines.push(t);
   }
 
@@ -128,6 +145,7 @@ export const readingParser: SectionParser = {
     const passages: ParsedPassage[] = [];
     const indexByHash = new Map<string, number>();
     const items: ParsedItem[] = [];
+    const unlinked: UnlinkedItem[] = [];
     const failed: FailedBlock[] = [];
     const notes: string[] = [];
 
@@ -138,6 +156,8 @@ export const readingParser: SectionParser = {
       if (!questionText) continue;
 
       let passageRef: number | undefined;
+      let reprint = false;
+
       if (body) {
         // Collapse reprints: the hash is over canonical text, so the
         // same passage printed forty times yields one row.
@@ -146,6 +166,7 @@ export const readingParser: SectionParser = {
         if (existing !== undefined) {
           passageRef = existing;
           passages[existing].occurrences++;
+          reprint = true;
         } else {
           passageRef = passages.length;
           passages.push({
@@ -153,38 +174,65 @@ export const readingParser: SectionParser = {
             body,
             contentHash: h,
             occurrences: 1,
+            hadExplicitHeader: region.hadExplicitHeader,
+            sourceLine: region.startLine,
           });
           indexByHash.set(h, passageRef);
         }
       }
 
       const split = splitBlocks(questionText, { optionsPerQuestion: 4, minOptions: 2 });
+      // Block line numbers are relative to the question run.
+      const toSourceLine = (n: number) => n + region.questionsStartLine - 1;
 
       for (const block of split.blocks) {
-        // A reading item with no passage is the defect that put grammar
-        // questions inside the Reading section. Report it as failed
-        // rather than emitting an orphan.
+        const base = {
+          sourceNumber: block.sourceNumber,
+          stem: block.stem,
+          options: block.options,
+          sourceLine: toSourceLine(block.sourceLine),
+          warnings: block.warnings,
+        };
+
+        /**
+         * No passage region was open.
+         *
+         * The question is NOT attached to the nearest passage. Once
+         * saved, a wrong link is indistinguishable from a right one, and
+         * a reading question under the wrong text is unanswerable in a
+         * way nobody notices until a candidate sits it.
+         */
         if (passageRef === undefined) {
-          failed.push({
-            reason: 'سؤال قراءة بلا قطعة — لم يُعثر على نص قبله',
-            sourceLine: block.sourceLine,
-            text: `${block.stem}\n${Object.entries(block.options).map(([k, v]) => `${k}) ${v}`).join('\n')}`,
+          unlinked.push({
+            ...base,
+            linkage: {
+              mechanism: 'unlinked',
+              evidence: ['لا توجد منطقة قطعة مفتوحة قبل هذا السؤال'],
+            },
+            reason: 'لم يسبقه أي نص قطعة في المصدر',
           });
           continue;
         }
 
+        const evidence = [
+          `ورد داخل منطقة القطعة رقم ${passageRef + 1} (السطر ${region.startLine} فصاعدًا)`,
+        ];
+        if (region.hadExplicitHeader) {
+          evidence.push('القطعة معلَّمة بترويسة صريحة في المصدر');
+        } else {
+          evidence.push('القطعة استُنتجت من فقرات مرقّمة، بلا ترويسة صريحة');
+        }
+        if (reprint) evidence.push('نسخة مكررة من القطعة — طُويت على النسخة الأولى');
+
         items.push({
-          sourceNumber: block.sourceNumber,
-          stem: block.stem,
-          options: block.options,
+          ...base,
           passageRef,
-          sourceLine: block.sourceLine,
-          warnings: block.warnings,
+          linkage: { mechanism: 'region-position', evidence },
         });
       }
 
       for (const f of split.failed) {
-        failed.push({ ...f, sourceLine: f.sourceLine + region.startLine - 1 });
+        failed.push({ ...f, sourceLine: toSourceLine(f.sourceLine) });
       }
     }
 
@@ -195,11 +243,13 @@ export const readingParser: SectionParser = {
         '(المصدر يعيد طباعة القطعة قبل كل سؤال).',
       );
     }
-    const orphanCount = failed.filter((f) => f.reason.includes('بلا قطعة')).length;
-    if (orphanCount) {
-      notes.push(`${orphanCount} سؤال قراءة بلا قطعة — محفوظ للمراجعة اليدوية، لم يُستورد.`);
+    if (unlinked.length) {
+      notes.push(
+        `${unlinked.length} سؤال قراءة بلا قطعة — لم يُربط بأقرب قطعة، ` +
+        'بل عُزل في قسم «أسئلة بلا ربط» للمراجعة.',
+      );
     }
 
-    return { items, passages, failed, notes };
+    return { items, passages, unlinked, failed, notes };
   },
 };

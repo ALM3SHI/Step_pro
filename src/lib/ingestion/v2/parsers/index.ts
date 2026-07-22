@@ -44,6 +44,7 @@ function standaloneParser(
           warnings: b.warnings,
         })),
         passages: [],
+        unlinked: [],
         failed: split.failed,
         notes,
       };

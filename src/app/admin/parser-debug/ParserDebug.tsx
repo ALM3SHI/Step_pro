@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react';
 import {
   debugParseAction, type DebugPassage, type DebugQuestion, type DebugResult,
+  type ParserComparison,
 } from '@/app/actions/parser-debug';
 import { SECTION_LIST, SKILL_BY_ID, type SectionId } from '@/lib/content/taxonomy';
 import { Alert, Badge, Button, Card, Pill, SectionTitle, Stat, inputClass } from '@/components/ui';
@@ -31,12 +32,13 @@ export function ParserDebug({
   const [result, setResult] = useState<DebugResult | null>(null);
   const [pending, start] = useTransition();
 
-  const run = () => {
+  const run = (compare = false) => {
     setResult(null);
     start(async () => {
       const res = await debugParseAction({
         section,
         limit,
+        compare,
         source: mode === 'sample'
           ? { kind: 'sample', key: sampleKey }
           : { kind: 'paste', text: paste },
@@ -104,8 +106,11 @@ export function ParserDebug({
               className={inputClass({ className: 'w-24 py-1' })}
             />
           </label>
-          <Button variant="primary" onClick={run} disabled={pending}>
+          <Button variant="primary" onClick={() => run(false)} disabled={pending}>
             {pending ? '…جارٍ التحليل' : 'حلّل واعرض'}
+          </Button>
+          <Button onClick={() => run(true)} disabled={pending}>
+            ⇄ قارن المحرك القديم بالجديد
           </Button>
         </div>
       </Card>
@@ -120,41 +125,82 @@ export function ParserDebug({
 
 function Results({ result }: { result: DebugResult }) {
   const r = result.report!;
-  const orphanCount = result.orphans?.length ?? 0;
+  const unlinkedCount = result.unlinked?.length ?? 0;
 
   return (
     <>
-      {/* ---------- report ---------- */}
+      {result.comparison && <Comparison c={result.comparison} />}
+
+      {/* ---------- statistics ---------- */}
       <Card className="p-6">
-        <SectionTitle>تقرير التحليل</SectionTitle>
+        <SectionTitle>إحصائيات التحليل</SectionTitle>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <Stat label="صفحات" value={r.pagesScanned} />
+          <Stat label="صفحات مفحوصة" value={r.pagesScanned} />
           <Stat label="قطع" value={r.passagesFound} tone="good" />
           <Stat label="أسئلة" value={r.questionsFound} tone="good" />
           <Stat label="مفاتيح إجابة" value={r.answerKeysFound} />
+          <Stat
+            label="أسئلة بلا ربط"
+            value={r.unlinkedQuestions}
+            tone={r.unlinkedQuestions ? 'bad' : 'good'}
+          />
+          <Stat
+            label="قطع بلا أسئلة"
+            value={r.emptyPassages}
+            tone={r.emptyPassages ? 'warn' : 'good'}
+          />
+          <Stat
+            label="مهارات مؤقتة"
+            value={r.temporarySkills}
+            tone={r.temporarySkills ? 'warn' : undefined}
+          />
+          <Stat label="قطع مكررة مدموجة" value={r.duplicatePassagesMerged} />
+          <Stat
+            label="كتل فاشلة"
+            value={r.failedBlocks}
+            tone={r.failedBlocks ? 'warn' : 'good'}
+          />
           <Stat label="مفاتيح مربوطة" value={r.answerKeysBound} />
-          <Stat label="بلا مفتاح" value={r.questionsWithoutKey} tone={r.questionsWithoutKey ? 'warn' : undefined} />
+          <Stat
+            label="بلا مفتاح"
+            value={r.questionsWithoutKey}
+            tone={r.questionsWithoutKey ? 'warn' : undefined}
+          />
           <Stat label="تكرار داخل الملف" value={r.duplicatesInPayload} />
-          <Stat label="كتل فاشلة" value={r.failedBlocks} tone={r.failedBlocks ? 'warn' : undefined} />
         </div>
 
         <p className="mt-3 text-xs text-[color:var(--app-muted)]">
-          المُحلّل: <b>{r.parser}</b> · تكرار القطع المطوي: <b>{r.passageReprintsCollapsed}</b>
-          {' '}· صور متخطاة: {r.imagesSkipped} · جداول: {r.tablesSkipped} · رسوم: {r.chartsSkipped}
+          المُحلّل: <b>{r.parser}</b> · صور متخطاة: {r.imagesSkipped} · جداول:{' '}
+          {r.tablesSkipped} · رسوم: {r.chartsSkipped}
         </p>
 
-        {/* The single number that decides whether reading is correct. */}
+        {/* Confidence spread — an audit of the links, not their cause. */}
+        <div className="mt-3 rounded-xl bg-black/[0.04] p-3 dark:bg-white/[0.05]">
+          <p className="mb-1 text-xs font-bold">توزيع ثقة الربط</p>
+          <div className="flex flex-wrap gap-3 text-xs">
+            <span className="text-emerald-700 dark:text-emerald-300">عالية {r.confidence.high}</span>
+            <span className="text-amber-700 dark:text-amber-300">متوسطة {r.confidence.medium}</span>
+            <span className="text-red-700 dark:text-red-300">منخفضة {r.confidence.low}</span>
+          </div>
+          <p className="mt-1.5 text-[0.68rem] leading-relaxed text-[color:var(--app-muted)]">
+            هذه الدرجة <b>تقييم لاحق</b> للربط ولا تصنعه. الربط موضعي بحت: السؤال يرث
+            قطعة المنطقة النصية التي ورد فيها. الدرجة تُقاس بعد ذلك بمقارنة مفردات السؤال
+            بالقطعة، فتكشف ربطًا سليمًا بنيويًا لكنه خاطئ دلاليًا. الثقة المنخفضة شائعة
+            في أسئلة «الفكرة الرئيسية» و«مرجع الضمير» لأنها لا تشارك القطعة مفرداتها.
+          </p>
+        </div>
+
         <div className="mt-3">
-          <Alert tone={orphanCount === 0 ? 'good' : 'bad'}>
-            {orphanCount === 0
-              ? '✓ كل سؤال مرتبط بقطعة — لا يوجد سؤال يتيم.'
-              : `⚠ ${orphanCount} سؤالًا بلا قطعة — الربط غير مكتمل.`}
+          <Alert tone={unlinkedCount === 0 ? 'good' : 'bad'}>
+            {unlinkedCount === 0
+              ? '✓ كل سؤال مرتبط بقطعة — لا يوجد سؤال بلا ربط.'
+              : `⚠ ${unlinkedCount} سؤالًا لم يُربط. لم يُنسب لأقرب قطعة — انظر القسم أدناه.`}
           </Alert>
         </div>
 
         {r.answerKeyConflicts.length > 0 && (
           <Alert tone="warn">
-            مفاتيح متضاربة (لم تُستخدم):{' '}
+            مفاتيح متضاربة (حُجبت ولم تُخمَّن):{' '}
             {r.answerKeyConflicts.map((c) => `${c.number}=${c.options.join('/')}`).join('، ')}
           </Alert>
         )}
@@ -186,15 +232,53 @@ function Results({ result }: { result: DebugResult }) {
         </p>
       )}
 
-      {/* ---------- orphans ---------- */}
-      {orphanCount > 0 && (
+      {/* ---------- unlinked questions ---------- */}
+      {unlinkedCount > 0 && (
         <Card accent="bad" className="p-5">
-          <h3 className="mb-3 font-bold text-red-700 dark:text-red-300">
-            أسئلة بلا قطعة ({orphanCount})
+          <h3 className="mb-1 font-bold text-red-700 dark:text-red-300">
+            أسئلة بلا ربط ({unlinkedCount})
           </h3>
+          <p className="mb-3 text-xs text-[color:var(--app-muted)]">
+            لم تُنسب لأقرب قطعة عمدًا — الربط الخاطئ لا يُميَّز عن الصحيح بعد الحفظ.
+          </p>
           <ol className="space-y-3">
-            {result.orphans!.map((q) => <QuestionRow key={q.index} q={q} />)}
+            {result.unlinked!.map((q) => (
+              <li key={q.index}>
+                <div className="mb-1 text-xs font-semibold text-red-700 dark:text-red-300">
+                  سبب الفشل: {q.reason}
+                </div>
+                <QuestionRow q={q} />
+              </li>
+            ))}
           </ol>
+        </Card>
+      )}
+
+      {/* ---------- passages nothing pointed at ---------- */}
+      {result.emptyPassages && result.emptyPassages.length > 0 && (
+        <Card accent="warn" className="p-5">
+          <h3 className="mb-1 font-bold">قطع بلا أسئلة ({result.emptyPassages.length})</h3>
+          <p className="mb-3 text-xs text-[color:var(--app-muted)]">
+            وُجدت في المصدر لكن لم يُنسب إليها أي سؤال.
+          </p>
+          <ul className="space-y-3">
+            {result.emptyPassages.map((p) => (
+              <li key={p.index} className="rounded-xl border border-[color:var(--app-line)] p-3">
+                <div className="mb-1.5 flex flex-wrap items-center gap-2">
+                  <Badge tone="warn">قطعة {p.index + 1}</Badge>
+                  <b className="text-sm">{p.title ?? '(بلا عنوان)'}</b>
+                  <span className="flex-1" />
+                  <SourceRef line={p.sourceLine} page={p.sourcePage} />
+                </div>
+                <p className="mb-2 text-xs font-semibold text-amber-700 dark:text-amber-300">
+                  السبب المرجّح: {p.probableCause}
+                </p>
+                <pre dir="ltr" className="max-h-32 overflow-y-auto whitespace-pre-wrap text-left font-serif text-xs text-[color:var(--app-muted)]">
+                  {p.body.slice(0, 400)}
+                </pre>
+              </li>
+            ))}
+          </ul>
         </Card>
       )}
 
@@ -226,6 +310,65 @@ function Results({ result }: { result: DebugResult }) {
 
 // ---------------------------------------------------------------------
 
+/** Line and page in the original source, so a bad parse can be looked up. */
+function SourceRef({ line, page }: { line: number; page?: number }) {
+  return (
+    <span className="whitespace-nowrap text-[0.65rem] text-[color:var(--app-muted)]">
+      {page != null && <>صفحة <b className="tabular-nums">{page}</b> · </>}
+      سطر <b className="tabular-nums">{line}</b>
+    </span>
+  );
+}
+
+function Comparison({ c }: { c: ParserComparison }) {
+  const rows: Array<[string, string | number, string | number, boolean]> = [
+    ['الأسئلة المستخرجة', c.old.questions, c.neu.questions, c.neu.questions >= c.old.questions],
+    ['القطع', c.old.passages, c.neu.passages, c.neu.passages >= c.old.passages],
+    ['أسئلة مرتبطة بقطعة', c.old.questionsWithPassage, c.neu.questionsWithPassage,
+      c.neu.questionsWithPassage >= c.old.questionsWithPassage],
+    ['مفاتيح إجابة مستخرجة', c.old.answerKeys, c.neu.answerKeys, c.neu.answerKeys >= c.old.answerKeys],
+    ['مرفوض / فاشل', c.old.rejected, c.neu.failed, true],
+    ['أسئلة بلا ربط (معزولة)', '—', c.neu.unlinked, true],
+    ['اختيار المُحلّل', `${c.old.strategy} (تخمين ${(c.old.strategyConfidence * 100).toFixed(0)}%)`,
+      `${c.neu.parser} (اختيار يدوي)`, true],
+  ];
+
+  return (
+    <Card accent="brand" className="p-6">
+      <SectionTitle hint="نفس النص، مُرِّر على المحركين.">مقارنة المحرك القديم بالجديد</SectionTitle>
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-[color:var(--app-line)] text-right">
+              <th className="py-2 font-bold">المقياس</th>
+              <th className="py-2 font-bold text-[color:var(--app-muted)]">القديم</th>
+              <th className="py-2 font-bold text-[color:var(--app-brand)]">الجديد</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(([label, oldV, newV, better]) => (
+              <tr key={label} className="border-b border-[color:var(--app-line)]/50">
+                <td className="py-2">{label}</td>
+                <td className="py-2 tabular-nums text-[color:var(--app-muted)]">{oldV}</td>
+                <td className={`py-2 font-bold tabular-nums ${
+                  better ? 'text-emerald-700 dark:text-emerald-300' : 'text-red-700 dark:text-red-300'
+                }`}>
+                  {newV}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {c.notes.map((n, i) => (
+        <p key={i} className="mt-2 text-xs leading-relaxed text-[color:var(--app-muted)]">• {n}</p>
+      ))}
+    </Card>
+  );
+}
+
 function PassageCard({ passage }: { passage: DebugPassage }) {
   const [open, setOpen] = useState(true);
 
@@ -240,7 +383,11 @@ function PassageCard({ passage }: { passage: DebugPassage }) {
         {passage.occurrences > 1 && (
           <Badge>تكررت {passage.occurrences}× في المصدر</Badge>
         )}
+        <Badge tone={passage.hadExplicitHeader ? undefined : 'warn'}>
+          {passage.hadExplicitHeader ? 'ترويسة صريحة' : 'مستنتجة من الفقرات'}
+        </Badge>
         <span className="flex-1" />
+        <SourceRef line={passage.sourceLine} page={passage.sourcePage} />
         <Button variant="ghost" size="sm" onClick={() => setOpen((v) => !v)}>
           {open ? 'إخفاء النص' : 'إظهار النص'}
         </Button>
@@ -294,9 +441,49 @@ function QuestionRow({ q }: { q: DebugQuestion }) {
           <Badge tone="bad">بلا مهارة</Badge>
         )}
 
+        {q.confidenceBand && (
+          <Badge
+            tone={
+              q.confidenceBand === 'high' ? 'good'
+                : q.confidenceBand === 'medium' ? 'warn' : 'bad'
+            }
+          >
+            ثقة الربط {Math.round((q.confidenceScore ?? 0) * 100)}%
+          </Badge>
+        )}
+
         <span className="flex-1" />
-        <span className="text-[0.65rem] text-[color:var(--app-muted)]">سطر {q.sourceLine}</span>
+        <SourceRef line={q.sourceLine} page={q.sourcePage} />
       </div>
+
+      {/* Why this question is under this passage — shown, not implied. */}
+      {q.linkMechanism && (
+        <details className="mb-2 rounded-lg bg-black/[0.03] px-2.5 py-1.5 dark:bg-white/[0.04]">
+          <summary className="cursor-pointer text-[0.7rem] font-semibold">
+            آلية الربط: {q.linkMechanism === 'region-position' ? 'موضعية (منطقة القطعة)' : 'بلا ربط'}
+          </summary>
+          <ul className="mt-1.5 space-y-0.5">
+            {q.linkEvidence?.map((e, i) => (
+              <li key={i} className="text-[0.68rem] text-[color:var(--app-muted)]">— {e}</li>
+            ))}
+          </ul>
+          {q.confidenceSignals && (
+            <>
+              <p className="mt-1.5 text-[0.68rem] font-semibold">إشارات الثقة:</p>
+              <ul className="space-y-0.5">
+                {q.confidenceSignals.map((s, i) => (
+                  <li key={i} className="text-[0.68rem]">
+                    <span className={s.passed ? 'text-emerald-700 dark:text-emerald-300' : 'text-[color:var(--app-muted)]'}>
+                      {s.passed ? '✓' : '✗'} {s.label}
+                    </span>
+                    <span className="opacity-60"> ({Math.round(s.weight * 100)}%)</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </details>
+      )}
 
       <p dir="ltr" className="mb-2 text-left font-serif text-[0.95rem] font-semibold">
         {q.text}

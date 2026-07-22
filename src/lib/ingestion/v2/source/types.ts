@@ -76,6 +76,24 @@ export function artifactCounts(doc: SourceDocument): Record<string, number> {
  * break; the report needs the page number back. Linear scan is fine —
  * this runs once per emitted block, not per character.
  */
+/**
+ * Line index (0-based, into `fullText`) -> page number.
+ *
+ * Built once per run so every emitted question and passage can say which
+ * page of the source it came from. A 700-page compilation is only
+ * reviewable if a bad parse can be looked up in the original.
+ */
+export function buildLinePageMap(doc: SourceDocument): number[] {
+  const map: number[] = [];
+  for (const page of doc.pages) {
+    // fullText joins pages with '\n', so each page contributes its own
+    // lines plus that separator.
+    const lineCount = page.text.split('\n').length;
+    for (let i = 0; i < lineCount; i++) map.push(page.number);
+  }
+  return map;
+}
+
 export function pageAtOffset(doc: SourceDocument, offset: number): number {
   let seen = 0;
   for (const page of doc.pages) {
