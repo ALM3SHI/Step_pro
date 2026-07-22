@@ -22,6 +22,7 @@ interface Guarded {
 const GUARDED: Guarded[] = [
   { file: 'src/app/actions/content.ts' },
   { file: 'src/app/actions/ingestion.ts' },
+  { file: 'src/app/actions/parser-debug.ts' },
 ];
 
 /**

@@ -1,6 +1,19 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
+  /**
+   * The parser-review page reads these corpora from disk at request time.
+   *
+   * Vercel ships only the files its trace analysis finds, and a path
+   * built with `path.join(process.cwd(), name)` is invisible to that
+   * analysis — so without this the page works locally and throws ENOENT
+   * in production. Listed explicitly rather than globbed: these two are
+   * review fixtures, and nothing else should be readable at runtime.
+   */
+  outputFileTracingIncludes: {
+    '/admin/parser-debug': ['./reading_bank.txt', './gramer_bank.txt'],
+  },
+
   experimental: {
     /**
      * Question batches only. Audio does NOT pass through here.

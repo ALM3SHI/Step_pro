@@ -9,6 +9,7 @@ const TABS = [
   { href: '/admin/import', label: 'الاستيراد' },
   { href: '/admin/listening', label: 'الاستماع' },
   { href: '/admin/history', label: 'السجل' },
+  { href: '/admin/parser-debug', label: 'مراجعة المُحلّل' },
   { href: '/exam', label: 'المحاكي' },
 ];
 
