@@ -22,3 +22,6 @@ legacy_bank.json
 # Source audio is served from Supabase Storage in production; the copy
 # under public/ exists only so the local demo route can play it.
 public/listening/
+
+# Validation PDFs — large, possibly licensed
+corpora/*.pdf

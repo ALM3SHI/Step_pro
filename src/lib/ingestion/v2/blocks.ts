@@ -156,9 +156,115 @@ export function splitBlocks(text: string, opts: SplitOptions = {}): SplitResult 
 
   const hasLettered = signals.lettered >= minOptions;
 
+  /**
+   * A quiz export numbers every item "N / M" on its own line.
+   *
+   * That is an authoritative boundary the DOCUMENT declares — far better
+   * than any inference from punctuation or line length, and it is what
+   * makes items with multi-line stems or full-sentence options parse at
+   * all. Preferred over every heuristic path when present.
+   */
+  if (!hasLettered && signals['quiz-marker'] >= 2) {
+    return splitByQuizMarkers(lines, expected, minOptions, signals);
+  }
+
   return hasLettered
     ? splitByLetteredOptions(lines, minOptions, signals)
     : splitByBareRuns(lines, expected, minOptions, signals);
+}
+
+/** Lines a quiz export prints between items that carry no content. */
+const EXPORT_NOISE =
+  /^\s*(?:you have not answered this question|لم تجب عن هذا السؤال)\s*$/i;
+
+/**
+ * Split on the document's own item markers.
+ *
+ * Within one item the shape is stem-then-options, so the options are the
+ * TRAILING lines. Taking the last four (fewer when the item is shorter,
+ * never so many that the stem would vanish) handles the three cases this
+ * format actually contains:
+ *
+ *   5 lines -> 1-line stem + 4 options
+ *   4 lines -> 1-line stem + 3 options      (genuinely 3-option items)
+ *   8 lines -> 4-line stem + 4 options      (sentence-ordering items)
+ *
+ * No length rule is applied to the options here: punctuation and
+ * capitalization items use whole sentences as choices, and a word
+ * ceiling rejects them.
+ */
+function splitByQuizMarkers(
+  lines: Line[],
+  expected: number,
+  minOptions: number,
+  signals: Record<BoundaryKind, number>,
+): SplitResult {
+  const blocks: RawBlock[] = [];
+  const failed: FailedBlock[] = [];
+
+  // Where each item starts, in `lines`.
+  const marks: Array<{ at: number; number: number }> = [];
+  lines.forEach((l, i) => {
+    const m = l.text.match(QUIZ_MARKER);
+    if (m) marks.push({ at: i, number: Number(m[1]) });
+  });
+
+  for (let m = 0; m < marks.length; m++) {
+    const from = marks[m].at + 1;
+    const to = m + 1 < marks.length ? marks[m + 1].at : lines.length;
+
+    const body = lines.slice(from, to).filter((l) => !EXPORT_NOISE.test(l.text));
+    if (!body.length) continue;
+
+    if (body.length < minOptions + 1) {
+      failed.push({
+        reason: `البند ${marks[m].number}: ${body.length} سطرًا فقط — لا يكفي لسؤال وخيارات`,
+        sourceLine: body[0]?.line ?? lines[marks[m].at].line,
+        text: body.map((l) => l.text).join('\n'),
+      });
+      continue;
+    }
+
+    // Never consume the whole item as options.
+    const optionCount = Math.min(expected, body.length - 1);
+    const stemLines = body.slice(0, body.length - optionCount);
+    const optionLines = body.slice(body.length - optionCount);
+
+    const first = stemLines[0].text;
+    const num = first.match(NUMBERED);
+
+    const options: Partial<Record<OptionLetter, string>> = {};
+    optionLines.forEach((l, i) => { options[OPTION_LETTERS[i]] = l.text; });
+
+    const stem = [num ? num[2] : first, ...stemLines.slice(1).map((l) => l.text)]
+      .join(' ')
+      .trim();
+
+    if (!stem) {
+      failed.push({
+        reason: `البند ${marks[m].number}: خيارات بلا نص سؤال`,
+        sourceLine: body[0].line,
+        text: body.map((l) => l.text).join('\n'),
+      });
+      continue;
+    }
+
+    const warnings: string[] = [];
+    if (optionCount !== expected) warnings.push(`عدد الخيارات ${optionCount} بدل ${expected}`);
+    if (stemLines.length > 1) warnings.push(`نص السؤال على ${stemLines.length} أسطر`);
+
+    blocks.push({
+      // The marker's own number is the item number — no inference needed.
+      sourceNumber: marks[m].number,
+      stem,
+      options,
+      sourceLine: body[0].line,
+      boundary: 'quiz-marker',
+      warnings,
+    });
+  }
+
+  return { blocks, failed, signals };
 }
 
 type Line = { text: string; line: number };
