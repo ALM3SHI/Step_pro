@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { SECTION_LIST } from '@/lib/content/taxonomy';
 import { getPoolSummary } from '@/app/actions/exam';
+import { isAdmin } from '@/lib/auth/admin';
 import { Card, linkClass } from '@/components/ui';
 
 export const dynamic = 'force-dynamic';
@@ -36,6 +37,7 @@ export default async function Home() {
     // The landing page must render even with no database behind it.
   }
   const totalQuestions = Object.values(pool).reduce((a, b) => a + b, 0);
+  const admin = await isAdmin();
 
   return (
     <div className="min-h-screen">
@@ -61,12 +63,16 @@ export default async function Home() {
         <Link href="/progress" className={linkClass({ variant: 'ghost', size: 'sm' })}>
           تقدّمي
         </Link>
-        <Link
-          href="/admin"
-          className={linkClass({ variant: 'ghost', size: 'sm', className: 'text-[color:var(--app-muted)]' })}
-        >
-          الإدارة
-        </Link>
+        {/* Advertised only to someone already signed in. A visitor has no
+            use for the link, and publishing it invites probing. */}
+        {admin && (
+          <Link
+            href="/admin"
+            className={linkClass({ variant: 'ghost', size: 'sm', className: 'text-[color:var(--app-muted)]' })}
+          >
+            الإدارة
+          </Link>
+        )}
       </header>
 
       <main className="mx-auto max-w-5xl px-6 pb-24">

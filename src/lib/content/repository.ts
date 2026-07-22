@@ -281,9 +281,30 @@ export async function findDuplicate(
 
 export async function createQuestion(q: DraftQuestion, batchId: string): Promise<EditableQuestion> {
   const db = createServiceClient();
+
+  const row = toRow(q, batchId);
+
+  /**
+   * Give every new question a distinct position.
+   *
+   * Without this the column stays null, and a batch of null ordinals has
+   * no order to rearrange — Move Up would report success and visibly do
+   * nothing, because there was nothing to swap. An explicit caller-
+   * supplied ordinal (the bulk importer sets one per row) still wins.
+   */
+  if (row.ordinal == null) {
+    const { data: last } = await db
+      .from('questions')
+      .select('ordinal')
+      .eq('batch_id', batchId)
+      .order('ordinal', { ascending: false, nullsFirst: false })
+      .limit(1);
+    row.ordinal = ((last?.[0]?.ordinal as number | null) ?? 0) + 1;
+  }
+
   const { data, error } = await db
     .from('questions')
-    .insert(toRow(q, batchId))
+    .insert(row)
     .select(QUESTION_COLUMNS)
     .single();
   if (error) throw new Error(translateDbError(error.message));
@@ -314,16 +335,105 @@ export async function deleteQuestion(id: string) {
   invalidateContentCache();
 }
 
-/** Persist a new display order. Positions are 1-based. */
-export async function reorderQuestions(orderedIds: string[]) {
+/**
+ * Swap two questions' positions.
+ *
+ * This is what a Move Up / Move Down click means, and it costs two row
+ * updates. The previous implementation renumbered the WHOLE batch on
+ * every nudge — one sequential round trip per question, so a single
+ * click on a 1,100-question batch issued 1,100 requests and hung the
+ * page for minutes. Moving one item never needed to touch the other
+ * 1,098.
+ *
+ * Ordinals are read back rather than assumed: the client's index is a
+ * view of a possibly stale list, and writing positions derived from it
+ * would silently corrupt the order.
+ */
+export async function swapQuestionOrder(idA: string, idB: string) {
   const db = createServiceClient();
-  // Sequential rather than parallel: Supabase has no batch-update
-  // primitive, and firing 200 concurrent requests trips its rate limit.
-  for (let i = 0; i < orderedIds.length; i++) {
-    const { error } = await db.from('questions').update({ ordinal: i + 1 }).eq('id', orderedIds[i]);
+
+  const read = async () => {
+    const { data, error } = await db
+      .from('questions')
+      .select('id, ordinal')
+      .in('id', [idA, idB]);
     if (error) throw new Error(error.message);
+    const a = data?.find((r) => r.id === idA);
+    const b = data?.find((r) => r.id === idB);
+    if (!a || !b) throw new Error('لم يُعثر على أحد السؤالين');
+    return [(a.ordinal as number | null) ?? 0, (b.ordinal as number | null) ?? 0] as const;
+  };
+
+  let [ordA, ordB] = await read();
+
+  /**
+   * Rows that share an ordinal have no order to exchange.
+   *
+   * Legacy imports and any row predating ordinal assignment collide on 0
+   * or null. Repair the batch, then RE-READ and carry on with the swap —
+   * returning here instead is what made the first Move Up click renumber
+   * silently and appear to do nothing at all.
+   */
+  if (ordA === ordB) {
+    await renumberBatchOrdinals(await batchIdOf(db, idA));
+    [ordA, ordB] = await read();
+    // Still equal means the two ids are the same row; nothing to do.
+    if (ordA === ordB) return;
   }
+
+  for (const [id, ordinal] of [[idA, ordB], [idB, ordA]] as const) {
+    const { error: uErr } = await db.from('questions').update({ ordinal }).eq('id', id);
+    if (uErr) throw new Error(uErr.message);
+  }
+
   invalidateContentCache();
+}
+
+async function batchIdOf(
+  db: ReturnType<typeof createServiceClient>,
+  questionId: string,
+): Promise<string> {
+  const { data, error } = await db
+    .from('questions')
+    .select('batch_id')
+    .eq('id', questionId)
+    .single();
+  if (error || !data) throw new Error(error?.message ?? 'question not found');
+  return data.batch_id as string;
+}
+
+/**
+ * Give every question in a batch a distinct 1-based ordinal.
+ *
+ * Only for repairing a batch whose ordinals collide or were never set —
+ * imported rows often share one. Expensive by nature (one update per
+ * row), so it is never on the path of an ordinary reorder click.
+ */
+export async function renumberBatchOrdinals(batchId: string): Promise<number> {
+  const db = createServiceClient();
+
+  const { data, error } = await db
+    .from('questions')
+    .select('id, ordinal, created_at')
+    .eq('batch_id', batchId)
+    .order('ordinal', { ascending: true, nullsFirst: false })
+    .order('created_at', { ascending: true });
+  if (error) throw new Error(error.message);
+
+  const rows = data ?? [];
+  let written = 0;
+  for (let i = 0; i < rows.length; i++) {
+    if ((rows[i].ordinal as number | null) === i + 1) continue; // already right
+    const { error: uErr } = await db
+      .from('questions')
+      .update({ ordinal: i + 1 })
+      .eq('id', rows[i].id as string);
+    if (uErr) throw new Error(uErr.message);
+    written++;
+  }
+
+  invalidateContentCache();
+  return written;
 }
 
 /** Move questions to another batch, appending to its existing order. */

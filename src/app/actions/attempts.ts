@@ -114,10 +114,39 @@ export async function openAttempt(input: {
  * already landed and this payload lost the race. The caller must not
  * retry or surface it.
  */
+/**
+ * Confirm this device owns the attempt it is writing to.
+ *
+ * These actions run through the service-role client, which bypasses RLS
+ * entirely — so the database will happily let any caller write to any
+ * attempt id. Without this check, knowing (or guessing) an id is enough
+ * to overwrite someone else's answers or force their paper to be graded.
+ */
+async function ownsAttempt(attemptId: string): Promise<boolean> {
+  const deviceId = await getDeviceId();
+  // No cookie means no claim to make. Attempts are always opened WITH a
+  // device id, so an id-less caller can never legitimately own one.
+  if (!deviceId) return false;
+
+  const db = createServiceClient();
+  const { data, error } = await db
+    .from('exam_attempts')
+    .select('id')
+    .eq('id', attemptId)
+    .eq('user_id', deviceId)
+    .maybeSingle();
+
+  return !error && Boolean(data);
+}
+
 export async function saveAttempt(
   snap: AttemptSnapshot,
 ): Promise<{ ok: boolean; applied: boolean; storedRevision?: number; error?: string }> {
   try {
+    if (!(await ownsAttempt(snap.attemptId))) {
+      return { ok: false, applied: false, error: 'not your attempt' };
+    }
+
     const db = createServiceClient();
     const { data, error } = await db.rpc('sync_exam_attempt', {
       p_attempt_id: snap.attemptId,
@@ -183,6 +212,10 @@ export async function submitAttempt(
   outcomes?: OutcomeRow[],
 ): Promise<SubmitResult> {
   try {
+    if (!(await ownsAttempt(attemptId))) {
+      return { ok: false, error: 'not your attempt' };
+    }
+
     const graded = await scoreAttempt(answers, questionIds);
     const db = createServiceClient();
 
@@ -277,21 +310,13 @@ async function scoreAttempt(answers: Record<string, OptionKey>, questionIds: str
   };
 }
 
-/** Load a stored attempt, for resume or a results re-view. */
-export async function loadAttempt(attemptId: string) {
-  try {
-    const db = createServiceClient();
-    const { data, error } = await db
-      .from('exam_attempts')
-      .select('*')
-      .eq('id', attemptId)
-      .single();
-    if (error) return { ok: false as const, error: error.message };
-    return { ok: true as const, attempt: data };
-  } catch (err) {
-    return { ok: false as const, error: err instanceof Error ? err.message : String(err) };
-  }
-}
+/*
+ * `loadAttempt` used to live here: it selected an attempt row by id with
+ * no ownership check and had no callers. Every exported function in a
+ * 'use server' file is a public endpoint, so it was an unused way to read
+ * any visitor's paper — including its answer key — by guessing an id.
+ * Resume goes through `resumeAttempt`, which is scoped to the device.
+ */
 
 export interface ResumableSummary {
   attemptId: string;

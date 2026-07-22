@@ -20,7 +20,7 @@
     "migrate:verify": "tsx scripts/verify-migration.ts",
     "content:build": "tsx scripts/extract-legacy-bank.ts && tsx scripts/build-content.ts",
     "content:check": "tsx scripts/check-blueprint-feasibility.ts",
-    "test": "tsx scripts/test-insights.ts && tsx scripts/test-content-layer.ts && tsx scripts/test-build-exam.ts && tsx scripts/test-targeted-practice.ts && tsx scripts/test-session.ts && tsx scripts/test-fastkey.ts && tsx scripts/test-sha256.ts && tsx scripts/test-small-batch.ts && tsx scripts/test-solver.ts"
+    "test": "tsx scripts/test-admin-auth.ts && tsx scripts/test-action-guards.ts && tsx scripts/test-bank-filters.ts && tsx scripts/test-insights.ts && tsx scripts/test-content-layer.ts && tsx scripts/test-build-exam.ts && tsx scripts/test-targeted-practice.ts && tsx scripts/test-session.ts && tsx scripts/test-fastkey.ts && tsx scripts/test-sha256.ts && tsx scripts/test-small-batch.ts && tsx scripts/test-solver.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",

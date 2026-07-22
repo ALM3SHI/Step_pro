@@ -3,10 +3,13 @@
 import { useCallback, useEffect, useMemo, useState, useTransition } from 'react';
 import { QuestionForm, emptyDraft } from './QuestionForm';
 import {
-  deleteQuestionAction, moveQuestionsAction, reorderQuestionsAction,
+  deleteQuestionAction, moveQuestionsAction, swapQuestionOrderAction,
   saveQuestionAction, setStatusAction,
 } from '@/app/actions/content';
-import { SECTION_DEFS, SKILL_BY_ID } from '@/lib/content/taxonomy';
+import {
+  DIFFICULTIES, SECTION_DEFS, SECTION_LIST, SKILLS_BY_SECTION, SKILL_BY_ID,
+  type Difficulty, type SectionId,
+} from '@/lib/content/taxonomy';
 import { validateDraft, type DraftQuestion } from '@/lib/content/validation';
 import type { BatchSummary, ContentStatus, AudioClipRef, EditableQuestion, PassageRef } from '@/lib/content/repository';
 import { Alert, Button, Card, EmptyState, Pill, inputClass } from '@/components/ui';
@@ -32,6 +35,46 @@ export interface BatchEditorProps {
 
 type Filter = 'all' | 'draft' | 'review' | 'published' | 'no-skill';
 
+const DIFFICULTY_LABELS: Record<Difficulty, string> = {
+  easy: 'سهل', medium: 'متوسط', hard: 'صعب',
+};
+
+/**
+ * Structural filters — the ones that answer "what is wrong with this
+ * batch", not "what is in it".
+ *
+ * Each is a defect the bank actually accumulates: an item with no answer
+ * key cannot be published, a reading item with no passage is the
+ * mis-tagging bug, and an item with no explanation gives the candidate
+ * nothing after the exam.
+ */
+const FLAG_FILTERS = {
+  'no-key': {
+    label: 'بلا مفتاح إجابة',
+    test: (q: EditableQuestion) => !q.correctOption,
+  },
+  'no-explanation': {
+    label: 'بلا شرح',
+    test: (q: EditableQuestion) => !q.explanationAr?.trim(),
+  },
+  'no-stimulus': {
+    label: 'قراءة/استماع بلا مُثير',
+    test: (q: EditableQuestion) =>
+      (q.section === 'reading' && !q.passageId && !q.imageUrl) ||
+      (q.section === 'listening' && !q.audioClipId),
+  },
+  'has-passage': {
+    label: 'له قطعة',
+    test: (q: EditableQuestion) => Boolean(q.passageId),
+  },
+  'has-audio': {
+    label: 'له صوت',
+    test: (q: EditableQuestion) => Boolean(q.audioClipId),
+  },
+} as const;
+
+type FlagKey = keyof typeof FLAG_FILTERS;
+
 export function BatchEditor({
   batch, initialQuestions, passages, audioClips, otherBatches,
 }: BatchEditorProps) {
@@ -42,6 +85,10 @@ export function BatchEditor({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState<Filter>('all');
   const [search, setSearch] = useState('');
+  const [section, setSection] = useState<SectionId | ''>('');
+  const [skillId, setSkillId] = useState('');
+  const [difficulty, setDifficulty] = useState<Difficulty | ''>('');
+  const [flags, setFlags] = useState<Set<FlagKey>>(new Set());
   const PAGE_SIZE = 40;
   const [limit, setLimit] = useState(PAGE_SIZE);
   const [message, setMessage] = useState<{ tone: 'ok' | 'err'; text: string } | null>(null);
@@ -64,22 +111,86 @@ export function BatchEditor({
     imageAlt: q.imageAlt,
   });
 
+  /**
+   * Every active filter narrows further — they compose as AND.
+   *
+   * Written as one pass with early returns rather than a chain of
+   * `.filter()` calls: at 1,100 questions a chain allocates a fresh array
+   * per dimension on every keystroke, and the search box is the one
+   * control that re-runs this on every character.
+   */
   const filtered = useMemo(() => {
-    const base = filter === 'no-skill'
-      ? questions.filter((q) => !q.skillId)
-      : filter === 'all'
-        ? questions
-        : questions.filter((q) => q.status === filter);
-
     const needle = search.trim().toLowerCase();
-    if (!needle) return base;
-    return base.filter(
-      (q) =>
-        q.text.toLowerCase().includes(needle) ||
-        Object.values(q.options).some((o) => o?.toLowerCase().includes(needle)) ||
-        (q.explanationAr ?? '').toLowerCase().includes(needle),
-    );
-  }, [questions, filter, search]);
+    const activeFlags = [...flags];
+
+    return questions.filter((q) => {
+      // --- status / missing-skill tab ---
+      if (filter === 'no-skill') { if (q.skillId) return false; }
+      else if (filter !== 'all' && q.status !== filter) return false;
+
+      // --- taxonomy ---
+      if (section && q.section !== section) return false;
+      if (skillId && q.skillId !== skillId) return false;
+      if (difficulty && q.difficulty !== difficulty) return false;
+
+      // --- structural flags ---
+      for (const key of activeFlags) {
+        if (!FLAG_FILTERS[key].test(q)) return false;
+      }
+
+      // --- free text, last: it is the most expensive test ---
+      if (needle) {
+        const hit =
+          q.text.toLowerCase().includes(needle) ||
+          Object.values(q.options).some((o) => o?.toLowerCase().includes(needle)) ||
+          (q.explanationAr ?? '').toLowerCase().includes(needle);
+        if (!hit) return false;
+      }
+
+      return true;
+    });
+  }, [questions, filter, search, section, skillId, difficulty, flags]);
+
+  /**
+   * Skills offered in the picker.
+   *
+   * Scoped to the chosen section, and otherwise to the skills this batch
+   * actually contains — listing all 27 when the batch holds four is a
+   * menu of dead ends.
+   */
+  const skillOptions = useMemo(() => {
+    const present = new Set(questions.map((q) => q.skillId).filter(Boolean) as string[]);
+    const pool = section ? (SKILLS_BY_SECTION[section] ?? []) : Object.values(SKILL_BY_ID);
+    return pool
+      .filter((s) => present.has(s.id))
+      .map((s) => ({
+        ...s,
+        count: questions.filter((q) => q.skillId === s.id).length,
+      }));
+  }, [questions, section]);
+
+  /** Sections this batch actually contains, with counts. */
+  const sectionOptions = useMemo(
+    () => SECTION_LIST
+      .map((s) => ({ ...s, count: questions.filter((q) => q.section === s.id).length }))
+      .filter((s) => s.count > 0),
+    [questions],
+  );
+
+  const activeFilterCount =
+    (filter !== 'all' ? 1 : 0) + (section ? 1 : 0) + (skillId ? 1 : 0) +
+    (difficulty ? 1 : 0) + flags.size + (search.trim() ? 1 : 0);
+
+  const clearFilters = () => {
+    setFilter('all'); setSection(''); setSkillId('');
+    setDifficulty(''); setFlags(new Set()); setSearch('');
+  };
+
+  const toggleFlag = (key: FlagKey) => setFlags((prev) => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
 
   /**
    * Render a window, not the whole batch.
@@ -102,7 +213,23 @@ export function BatchEditor({
     'no-skill': questions.filter((q) => !q.skillId).length,
   }), [questions]);
 
-  useEffect(() => { setLimit(PAGE_SIZE); }, [filter, search]);
+  // Any narrowing returns to page one. Keeping a 400-row window after
+  // the result set shrank to 12 leaves "show more" visible with nothing
+  // behind it.
+  useEffect(() => {
+    setLimit(PAGE_SIZE);
+  }, [filter, search, section, skillId, difficulty, flags]);
+
+  /**
+   * A skill from another section would filter to nothing.
+   *
+   * Picking "grammar" while "Main Idea" is still selected yields an empty
+   * list with two controls that each look reasonable — so the stale one
+   * is dropped rather than left to produce a confusing empty state.
+   */
+  useEffect(() => {
+    if (section && skillId && SKILL_BY_ID[skillId]?.section !== section) setSkillId('');
+  }, [section, skillId]);
 
   const save = useCallback((allowDuplicate = false) => {
     if (!draft) return;
@@ -145,20 +272,36 @@ export function BatchEditor({
     });
   };
 
-  /** Move one question up or down, then persist the whole order. */
+  /**
+   * Swap one question with the neighbour ABOVE OR BELOW IT ON SCREEN.
+   *
+   * The neighbour comes from `filtered`, not from the full list. Reading
+   * it from the full list meant that with a filter active the arrow
+   * swapped the question with a row the user could not see: the visible
+   * order appeared unchanged, so the button read as broken while it was
+   * quietly reordering the batch.
+   *
+   * Two ids go to the server, never the whole order — see
+   * `swapQuestionOrderAction`.
+   */
   const nudge = (id: string, dir: -1 | 1) => {
-    const idx = questions.findIndex((q) => q.id === id);
-    const target = idx + dir;
-    if (idx < 0 || target < 0 || target >= questions.length) return;
+    const pos = filtered.findIndex((q) => q.id === id);
+    const neighbour = filtered[pos + dir];
+    if (pos < 0 || !neighbour) return;
 
+    const i = questions.findIndex((q) => q.id === id);
+    const j = questions.findIndex((q) => q.id === neighbour.id);
+    if (i < 0 || j < 0) return;
+
+    const previous = questions;
     const next = [...questions];
-    [next[idx], next[target]] = [next[target], next[idx]];
+    [next[i], next[j]] = [next[j], next[i]];
     setQuestions(next); // optimistic — reordering should feel instant
 
     start(async () => {
-      const res = await reorderQuestionsAction(next.map((q) => q.id), batch.id);
+      const res = await swapQuestionOrderAction(id, neighbour.id);
       if (!res.ok) {
-        setQuestions(questions); // roll back to the order the server still holds
+        setQuestions(previous); // roll back to the order the server still holds
         setMessage({ tone: 'err', text: res.error ?? 'فشل إعادة الترتيب' });
       }
     });
@@ -226,6 +369,77 @@ export function BatchEditor({
           </Button>
         </div>
 
+        {/* --- taxonomy filters --- */}
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={section}
+            onChange={(e) => setSection(e.target.value as SectionId | '')}
+            aria-label="تصفية بالقسم"
+            className={inputClass({ className: 'w-auto py-1.5 text-sm' })}
+          >
+            <option value="">كل الأقسام</option>
+            {sectionOptions.map((s) => (
+              <option key={s.id} value={s.id}>{s.nameAr} ({s.count})</option>
+            ))}
+          </select>
+
+          <select
+            value={skillId}
+            onChange={(e) => setSkillId(e.target.value)}
+            aria-label="تصفية بالمهارة"
+            disabled={skillOptions.length === 0}
+            className={inputClass({ className: 'w-auto py-1.5 text-sm' })}
+          >
+            <option value="">كل المهارات</option>
+            {skillOptions.map((s) => (
+              <option key={s.id} value={s.id}>{s.nameAr} ({s.count})</option>
+            ))}
+          </select>
+
+          <select
+            value={difficulty}
+            onChange={(e) => setDifficulty(e.target.value as Difficulty | '')}
+            aria-label="تصفية بالصعوبة"
+            className={inputClass({ className: 'w-auto py-1.5 text-sm' })}
+          >
+            <option value="">كل المستويات</option>
+            {DIFFICULTIES.map((d) => (
+              <option key={d} value={d}>
+                {DIFFICULTY_LABELS[d]} ({questions.filter((q) => q.difficulty === d).length})
+              </option>
+            ))}
+          </select>
+
+          {(Object.keys(FLAG_FILTERS) as FlagKey[]).map((key) => {
+            const n = questions.filter(FLAG_FILTERS[key].test).length;
+            return (
+              <Pill
+                key={key}
+                tone="accent"
+                active={flags.has(key)}
+                onClick={() => toggleFlag(key)}
+                disabled={n === 0 && !flags.has(key)}
+              >
+                {FLAG_FILTERS[key].label} <span className="tabular-nums opacity-70">({n})</span>
+              </Pill>
+            );
+          })}
+
+          <span className="flex-1" />
+
+          {/* The count is the feedback that the filters did something —
+              without it an empty list reads as a broken page. */}
+          <span className="text-xs tabular-nums text-[color:var(--app-muted)]">
+            {filtered.length} من {questions.length}
+          </span>
+
+          {activeFilterCount > 0 && (
+            <Button variant="ghost" size="sm" onClick={clearFilters}>
+              مسح الفلاتر ({activeFilterCount})
+            </Button>
+          )}
+        </div>
+
         {selected.size > 0 && (
           <div className="flex flex-wrap items-center gap-2 rounded-xl bg-black/[0.04] px-3 py-2 dark:bg-white/[0.05]">
             <span className="text-sm font-semibold">{selected.size} محدَّد</span>
@@ -286,15 +500,36 @@ export function BatchEditor({
       {visible.length === 0 ? (
         <Card>
           <EmptyState
-            icon={search ? '🔍' : '📝'}
-            title={search ? 'لا نتائج لهذا البحث' : 'لا توجد أسئلة في هذا التصنيف'}
+            icon={activeFilterCount > 0 ? '🔍' : '📝'}
+            title={
+              activeFilterCount > 0
+                ? 'لا سؤال يطابق هذه الفلاتر'
+                : 'لا توجد أسئلة في هذه التجميعة'
+            }
+            // Naming the count is what turns a dead end into an action —
+            // the combination is usually one filter too many, not empty.
+            body={
+              activeFilterCount > 0
+                ? `${activeFilterCount} فلترًا مفعّلًا على ${questions.length} سؤالًا. جرّب مسحها.`
+                : undefined
+            }
           />
+          {activeFilterCount > 0 && (
+            <div className="px-6 pb-6">
+              <Button block onClick={clearFilters}>مسح كل الفلاتر</Button>
+            </div>
+          )}
         </Card>
       ) : (
         <ul className="space-y-3">
-          {visible.map((q) => {
+          {visible.map((q, visibleIdx) => {
             const isEditing = editingId === q.id;
             const idx = questions.findIndex((x) => x.id === q.id);
+            // Enabled per the VISIBLE list, matching what the arrow will
+            // actually do. Keyed off `filtered` rather than `visible` so
+            // the last row of a page can still move into the next page.
+            const canMoveUp = visibleIdx > 0;
+            const canMoveDown = visibleIdx < filtered.length - 1;
 
             return (
               <Card key={q.id} as="li" className="p-4">
@@ -335,9 +570,9 @@ export function BatchEditor({
                   <span className="flex-1" />
 
                   <Button variant="ghost" size="sm" onClick={() => nudge(q.id, -1)}
-                    disabled={idx === 0 || pending} aria-label="لأعلى">▲</Button>
+                    disabled={!canMoveUp || pending} aria-label="لأعلى">▲</Button>
                   <Button variant="ghost" size="sm" onClick={() => nudge(q.id, 1)}
-                    disabled={idx === questions.length - 1 || pending} aria-label="لأسفل">▼</Button>
+                    disabled={!canMoveDown || pending} aria-label="لأسفل">▼</Button>
                   <Button
                     size="sm"
                     onClick={() => {

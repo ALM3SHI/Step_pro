@@ -1,13 +1,15 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { ADMIN_COOKIE, verifyAdminToken } from '@/lib/auth/adminToken';
 
 /**
- * Issue a stable anonymous device id.
+ * Two jobs, in order: gate the admin panel, then issue a device id.
  *
- * With no auth yet, this cookie is what keeps one visitor's attempts and
- * progress from being served to another. It is created here rather than
- * in a Server Component because a component render cannot set a cookie,
- * and `/progress` needs the id available on its very first render — so the
- * new id is forwarded onto this request too, not only stored for later.
+ * The admin gate here is a CONVENIENCE — it turns "you may not" into a
+ * login redirect instead of a broken page. It is not the security
+ * boundary: server actions are reachable without ever loading a page, so
+ * the real check is `requireAdmin()` inside each action. Removing this
+ * block would leak the panel's markup; removing that one would hand over
+ * the question bank.
  *
  * Must match DEVICE_COOKIE in src/lib/auth/device.ts. Duplicated as a
  * literal on purpose: this file runs in the Edge runtime and must not
@@ -16,7 +18,21 @@ import { NextResponse, type NextRequest } from 'next/server';
 const DEVICE_COOKIE = 'device_id';
 const TWO_YEARS_SECONDS = 60 * 60 * 24 * 730;
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+
+  if (pathname.startsWith('/admin') && !pathname.startsWith('/admin/login')) {
+    const ok = await verifyAdminToken(request.cookies.get(ADMIN_COOKIE)?.value, Date.now());
+    if (!ok) {
+      const url = request.nextUrl.clone();
+      url.pathname = '/admin/login';
+      // Carry the intended destination so login lands where they meant
+      // to go, not always on the panel home.
+      url.search = `?next=${encodeURIComponent(pathname)}`;
+      return NextResponse.redirect(url);
+    }
+  }
+
   if (request.cookies.get(DEVICE_COOKIE)) return NextResponse.next();
 
   const id = crypto.randomUUID();
