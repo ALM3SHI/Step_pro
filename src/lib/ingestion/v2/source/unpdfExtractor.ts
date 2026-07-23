@@ -32,7 +32,8 @@ export const unpdfExtractor: PdfExtractor = {
     // is actually processed.
     const { extractText, getDocumentProxy } = await import('unpdf');
 
-    const pdf = await getDocumentProxy(bytes);
+    // pdf.js detaches the input buffer; copy so the caller keeps its own.
+    const pdf = await getDocumentProxy(bytes.slice());
     const { text } = await extractText(pdf, { mergePages: false });
 
     const pages = Array.isArray(text) ? text : [String(text)];

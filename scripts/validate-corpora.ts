@@ -18,6 +18,7 @@ import path from 'node:path';
 import { textFileAdapter } from '../src/lib/ingestion/v2/source/textAdapter';
 import { pdfAdapter } from '../src/lib/ingestion/v2/source/pdfAdapter';
 import { unpdfExtractor } from '../src/lib/ingestion/v2/source/unpdfExtractor';
+import { layoutExtractor } from '../src/lib/ingestion/v2/source/layoutExtractor';
 import { ingest } from '../src/lib/ingestion/v2/engine';
 import { normalize } from '../src/lib/ingestion/normalize';
 import type { SectionId } from '../src/lib/content/taxonomy';
@@ -135,9 +136,23 @@ for (const corpus of ALL) {
 
   if (corpus.isPdf) {
     const bytes = new Uint8Array(readFileSync(corpus.file));
-    doc = await pdfAdapter(unpdfExtractor).load(bytes, path.basename(corpus.file));
-    // Ground truth comes from the extracted text, since a PDF has no
-    // separate manifest of what it contains.
+
+    /**
+     * Two extractors on the same file, so a PDF failure can be blamed
+     * correctly. Flat extraction (unpdf) glues columns; layout-aware
+     * extraction (pdf.js coordinates) recovers reading order. Whichever
+     * yields more items is used — never fewer than the flat baseline.
+     */
+    const flat = await pdfAdapter(unpdfExtractor).load(bytes, path.basename(corpus.file));
+    const layout = await pdfAdapter(layoutExtractor).load(bytes, path.basename(corpus.file));
+
+    const flatItems = ingest(flat, { section: corpus.section }).questions.length;
+    const layoutItems = ingest(layout, { section: corpus.section }).questions.length;
+
+    doc = layoutItems >= flatItems ? layout : flat;
+    console.log(`  [extractor] flat=${flatItems} items, layout=${layoutItems} items`
+      + ` -> using ${layoutItems >= flatItems ? 'layout' : 'flat'}`);
+
     truth = declaredItemCount(doc.pages.map((p) => p.text).join('\n'));
   } else {
     const raw = readFileSync(corpus.file, 'utf8');
