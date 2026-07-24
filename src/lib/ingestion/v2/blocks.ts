@@ -14,6 +14,8 @@
  * every unparseable span as a retained failure.
  */
 
+import { extractInlineOptions } from './structure';
+
 export type OptionLetter = 'A' | 'B' | 'C' | 'D';
 export const OPTION_LETTERS: OptionLetter[] = ['A', 'B', 'C', 'D'];
 
@@ -36,7 +38,8 @@ export interface FailedBlock {
   text: string;
 }
 
-export type BoundaryKind = 'numbered' | 'lettered' | 'quiz-marker' | 'blank-marker' | 'option-run';
+export type BoundaryKind =
+  | 'numbered' | 'lettered' | 'quiz-marker' | 'blank-marker' | 'option-run' | 'inline-options';
 
 export interface SplitResult {
   blocks: RawBlock[];
@@ -145,13 +148,14 @@ export function splitBlocks(text: string, opts: SplitOptions = {}): SplitResult 
 
   const signals: Record<BoundaryKind, number> = {
     numbered: 0, lettered: 0, 'quiz-marker': 0,
-    'blank-marker': 0, 'option-run': 0,
+    'blank-marker': 0, 'option-run': 0, 'inline-options': 0,
   };
   for (const { text: t } of lines) {
     if (letteredOption(t)) signals.lettered++;
     else if (QUIZ_MARKER.test(t)) signals['quiz-marker']++;
     else if (NUMBERED.test(t)) signals.numbered++;
     else if (BLANK_MARKER.test(t)) signals['blank-marker']++;
+    if (extractInlineOptions(t)) signals['inline-options']++;
   }
 
   const hasLettered = signals.lettered >= minOptions;
@@ -164,13 +168,200 @@ export function splitBlocks(text: string, opts: SplitOptions = {}): SplitResult 
    * makes items with multi-line stems or full-sentence options parse at
    * all. Preferred over every heuristic path when present.
    */
-  if (!hasLettered && signals['quiz-marker'] >= 2) {
+  if (signals['quiz-marker'] >= 2 && !hasLettered) {
     return splitByQuizMarkers(lines, expected, minOptions, signals);
+  }
+
+  /**
+   * A numbered document whose options are inline.
+   *
+   * "N." on every item is the boundary; inside each item the options may
+   * be inline "(a – b – c)" OR lettered "A) …" — real files mix the two.
+   * Splitting on the number and extracting options per item covers both,
+   * where picking one option-style for the whole document loses the
+   * other. Gated on inline-options being present so a purely-lettered or
+   * a passage document never takes this path.
+   */
+  if (signals.numbered >= 3 && signals['inline-options'] >= 2) {
+    return splitByNumberedItems(lines, expected, minOptions, signals);
+  }
+
+  /**
+   * Options carried inline, in parentheses, with no per-item numbering.
+   */
+  if (!hasLettered && signals['inline-options'] >= 2) {
+    return splitByInlineOptions(lines, signals);
   }
 
   return hasLettered
     ? splitByLetteredOptions(lines, minOptions, signals)
     : splitByBareRuns(lines, expected, minOptions, signals);
+}
+
+/**
+ * Split on `N.` item boundaries; extract options per item, whatever form.
+ *
+ * Order inside an item: lettered options if present, else inline
+ * parentheses, else bare trailing lines. Commentary ("# …") is skipped.
+ * This is the one path that copes with a document mixing option styles.
+ */
+function splitByNumberedItems(
+  lines: Line[],
+  expected: number,
+  minOptions: number,
+  signals: Record<BoundaryKind, number>,
+): SplitResult {
+  const blocks: RawBlock[] = [];
+  const failed: FailedBlock[] = [];
+
+  const marks: number[] = [];
+  lines.forEach((l, i) => { if (NUMBERED.test(l.text)) marks.push(i); });
+
+  for (let m = 0; m < marks.length; m++) {
+    const start = marks[m];
+    const end = m + 1 < marks.length ? marks[m + 1] : lines.length;
+    const body = lines.slice(start, end).filter((l) => !EXPORT_NOISE.test(l.text) && !l.text.startsWith('#'));
+    if (!body.length) continue;
+
+    const num = body[0].text.match(NUMBERED);
+    const sourceNumber = num ? Number(num[1]) : undefined;
+
+    // 1. lettered options anywhere in the item
+    const lettered: Partial<Record<OptionLetter, string>> = {};
+    for (const l of body) {
+      const opt = letteredOption(l.text);
+      if (opt) lettered[opt.letter] = opt.text;
+    }
+
+    let stem = '';
+    let options: Partial<Record<OptionLetter, string>> = {};
+
+    if (Object.keys(lettered).length >= minOptions) {
+      options = lettered;
+      // Stem is the body lines that are not lettered options.
+      stem = body
+        .filter((l) => !letteredOption(l.text))
+        .map((l, i) => (i === 0 && num ? num[2] : l.text))
+        .join(' ');
+    } else {
+      // 2. inline options on any line
+      let inlineFound = false;
+      const stemParts: string[] = [];
+      for (let i = 0; i < body.length; i++) {
+        const raw = i === 0 && num ? num[2] : body[i].text;
+        const inline = extractInlineOptions(body[i].text);
+        if (inline && !inlineFound) {
+          inlineFound = true;
+          options = inline.options;
+          // Keep the pre-parenthesis text of this line in the stem.
+          const head = i === 0 && num
+            ? (extractInlineOptions(num[2])?.stem ?? inline.stem)
+            : inline.stem;
+          stemParts.push(head);
+        } else {
+          stemParts.push(raw);
+        }
+      }
+      stem = stemParts.join(' ');
+
+      // 3. bare trailing lines, if still no options
+      if (!inlineFound) {
+        const candidates = body.slice(1).filter((l) => couldBeBareOption(l.text));
+        if (candidates.length >= minOptions) {
+          candidates.slice(0, OPTION_LETTERS.length).forEach((c, i) => { options[OPTION_LETTERS[i]] = c.text; });
+          stem = num ? num[2] : body[0].text;
+        }
+      }
+    }
+
+    stem = stem.replace(/\s{2,}/g, ' ').trim();
+    const count = Object.keys(options).length;
+
+    if (count >= minOptions && stem) {
+      blocks.push({
+        sourceNumber, stem, options,
+        sourceLine: body[0].line,
+        boundary: 'inline-options',
+        warnings: count < expected ? [`عدد الخيارات ${count} بدل ${expected}`] : [],
+      });
+    } else {
+      failed.push({
+        reason: count < minOptions ? `خيارات غير كافية (${count} من ${minOptions})` : 'بلا نص سؤال',
+        sourceLine: body[0].line,
+        text: body.map((l) => l.text).join('\n'),
+      });
+    }
+  }
+
+  return { blocks, failed, signals };
+}
+
+/**
+ * Items whose options sit in a parenthesised group.
+ *
+ * The group ends the item; the stem is everything since the previous
+ * item, up to and including the pre-parenthesis text on the option line.
+ * A leading annotation sigil ("#") marks commentary between items, which
+ * is skipped rather than folded into the next stem.
+ */
+function splitByInlineOptions(
+  lines: Line[],
+  signals: Record<BoundaryKind, number>,
+): SplitResult {
+  const blocks: RawBlock[] = [];
+  const failed: FailedBlock[] = [];
+
+  let stem: string[] = [];
+  let stemLine = 0;
+
+  for (const { text: t, line } of lines) {
+    // A note line ("# ...") is commentary sitting after an item's
+    // options; it must not become part of the next stem.
+    if (t.startsWith('#')) continue;
+
+    const inline = extractInlineOptions(t);
+    if (!inline) {
+      if (!stem.length) stemLine = line;
+      stem.push(t);
+      continue;
+    }
+
+    // The option line may carry stem text before the parentheses
+    // ("born (a-b-c) June 22"); inline.stem is that line with the group
+    // replaced by a blank.
+    const num = (stem[0] ?? inline.stem).match(NUMBERED);
+    const head = num ? [num[2], ...stem.slice(1)] : [...stem];
+    const stemText = [...head, inline.stem].join(' ').replace(/\s{2,}/g, ' ').trim();
+
+    if (Object.keys(inline.options).length >= 2 && stemText) {
+      blocks.push({
+        sourceNumber: num ? Number(num[1]) : undefined,
+        stem: stemText,
+        options: inline.options,
+        sourceLine: stem.length ? stemLine : line,
+        boundary: 'inline-options',
+        warnings: [],
+      });
+    } else if (stemText || Object.keys(inline.options).length) {
+      failed.push({
+        reason: 'خيارات مضمّنة بلا نص سؤال كافٍ',
+        sourceLine: line,
+        text: [...stem, t].join('\n'),
+      });
+    }
+    stem = [];
+  }
+
+  // Trailing stem with no options is an incomplete item, kept for review.
+  if (stem.join(' ').trim()) {
+    failed.push({
+      reason: 'نص سؤال بلا خيارات مضمّنة',
+      sourceLine: stemLine,
+      text: stem.join('\n'),
+    });
+  }
+
+  return { blocks, failed, signals };
 }
 
 /** Lines a quiz export prints between items that carry no content. */

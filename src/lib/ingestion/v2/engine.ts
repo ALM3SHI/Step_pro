@@ -1,4 +1,5 @@
 import { extractAnswerKeys, bindAnswerKeys } from './answerKey';
+import { structuralClean } from './structure';
 import { parserFor } from './parsers';
 import { artifactCounts, buildLinePageMap, fullText, type SourceDocument } from './source/types';
 import type { Linkage } from './parsers/types';
@@ -254,23 +255,34 @@ export function ingest(doc: SourceDocument, opts: IngestOptions): IngestionPlan 
   const keys = extractAnswerKeys(raw);
 
   /**
+   * Structural cleanup: drop dividers and foreign-script commentary.
+   *
+   * Runs after key extraction so a key line is never mistaken for a
+   * divider, and before parsing so the parser sees only content. Every
+   * STEP section is English, so Arabic runs are commentary — a fact of
+   * structure (script vs the section's language), not of any academy.
+   */
+  const cleaned = structuralClean(keys.text, { expectEnglish: true });
+
+  /**
    * Parser line -> source page.
    *
-   * Two hops, because key removal renumbers the text the parser sees:
-   * parser line -> original line (keys.lineMap) -> page (linePageMap).
-   * Skipping the first hop puts every question after a key block on the
-   * wrong page.
+   * Three hops now, because two stages renumber the text: parser line ->
+   * post-key line (cleaned.lineMap) -> original line (keys.lineMap) ->
+   * page. Skipping any hop puts questions on the wrong page.
    */
   const linePageMap = buildLinePageMap(doc);
   const pageOf = (parserLine: number): number | undefined => {
-    const originalLine = keys.lineMap[parserLine - 1];
+    const postKeyLine = cleaned.lineMap[parserLine - 1];
+    if (postKeyLine === undefined) return undefined;
+    const originalLine = keys.lineMap[postKeyLine];
     if (originalLine === undefined) return undefined;
     return linePageMap[originalLine];
   };
 
   // --- 2. the parser for the section the maintainer chose -------------
   const parser = parserFor(opts.section);
-  const parsed = parser.parse({ text: keys.text, section: opts.section });
+  const parsed = parser.parse({ text: cleaned.text, section: opts.section });
 
   // --- 3. bind keys to items -----------------------------------------
   const bound = bindAnswerKeys(
